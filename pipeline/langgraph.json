@@ -1,0 +1,8 @@
+{
+  "node_version": "20",
+  "dependencies": ["."],
+  "graphs": {
+    "podcast_pipeline": "./src/podcast_pipeline/graph.ts:graph"
+  },
+  "env": ".env"
+}
