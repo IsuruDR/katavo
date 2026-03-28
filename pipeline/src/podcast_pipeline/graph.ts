@@ -1,39 +1,59 @@
 /**
- * AI Podcast Generation Pipeline — LangGraph.js orchestration.
- * Placeholder graph to be implemented in Plan 2.
+ * Main LangGraph graph definition — wires all nodes together.
  */
-import { Annotation, StateGraph } from "@langchain/langgraph";
 
-const PipelineState = Annotation.Root({
-  podcastId: Annotation<string>,
-  userId: Annotation<string>,
-  topic: Annotation<string>,
-  clarifyingAnswers: Annotation<string[]>({
-    reducer: (_, y) => y,
-    default: () => [],
-  }),
-  hasAds: Annotation<boolean>({
-    reducer: (_, y) => y,
-    default: () => true,
-  }),
-  trustedSourceUrls: Annotation<string[]>({
-    reducer: (_, y) => y,
-    default: () => [],
-  }),
-  tier: Annotation<string>,
-  status: Annotation<string>({
-    reducer: (_, y) => y,
-    default: () => "queued",
-  }),
-});
+import { StateGraph, END } from "@langchain/langgraph";
+import { PipelineState } from "./state.js";
+import type { PipelineStateType } from "./state.js";
+import { briefBuilder } from "./nodes/briefBuilder.js";
+import { researchPlanner } from "./nodes/researchPlanner.js";
+import { deepResearcher } from "./nodes/deepResearcher.js";
+import { factChecker } from "./nodes/factChecker.js";
+import { qualityGate } from "./nodes/qualityGate.js";
+import { scriptWriter } from "./nodes/scriptWriter.js";
+import { adInjector } from "./nodes/adInjector.js";
+import { audioProducer } from "./nodes/audioProducer.js";
+import { metadataWriter } from "./nodes/metadataWriter.js";
 
-function placeholder(state: typeof PipelineState.State) {
-  return { status: "complete" };
+function routeAfterQualityGate(state: PipelineStateType): string {
+  if (state.shouldRetry) {
+    return "researchPlanner";
+  }
+  if (state.status === "failed") {
+    return END;
+  }
+  return "scriptWriter";
 }
 
-const builder = new StateGraph(PipelineState)
-  .addNode("placeholder", placeholder)
-  .addEdge("__start__", "placeholder")
-  .addEdge("placeholder", "__end__");
+function routeAfterScript(state: PipelineStateType): string {
+  if (state.status === "failed") {
+    return END;
+  }
+  if (state.hasAds) {
+    return "adInjector";
+  }
+  return "audioProducer";
+}
 
-export const graph = builder.compile();
+const workflow = new StateGraph(PipelineState)
+  .addNode("briefBuilder", briefBuilder)
+  .addNode("researchPlanner", researchPlanner)
+  .addNode("deepResearcher", deepResearcher)
+  .addNode("factChecker", factChecker)
+  .addNode("qualityGate", qualityGate)
+  .addNode("scriptWriter", scriptWriter)
+  .addNode("adInjector", adInjector)
+  .addNode("audioProducer", audioProducer)
+  .addNode("metadataWriter", metadataWriter)
+  .addEdge("__start__", "briefBuilder")
+  .addEdge("briefBuilder", "researchPlanner")
+  .addEdge("researchPlanner", "deepResearcher")
+  .addEdge("deepResearcher", "factChecker")
+  .addEdge("factChecker", "qualityGate")
+  .addConditionalEdges("qualityGate", routeAfterQualityGate)
+  .addConditionalEdges("scriptWriter", routeAfterScript)
+  .addEdge("adInjector", "audioProducer")
+  .addEdge("audioProducer", "metadataWriter")
+  .addEdge("metadataWriter", END);
+
+export const graph = workflow.compile();
