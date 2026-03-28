@@ -21,7 +21,7 @@ export default function PlayerScreen() {
         .select("*")
         .eq("id", id)
         .single();
-      if (data) setPodcast(data as Podcast);
+      if (data) setPodcast(data as unknown as Podcast);
       setLoading(false);
     })();
   }, [id]);

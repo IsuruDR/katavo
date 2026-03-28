@@ -9,6 +9,8 @@ import { useAuth } from "./useAuth";
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -17,7 +19,7 @@ Notifications.setNotificationHandler({
 export function usePushNotifications() {
   const { user } = useAuth();
   const [token, setToken] = useState<string | null>(null);
-  const notificationListener = useRef<Notifications.EventSubscription>();
+  const notificationListener = useRef<{ remove: () => void }>(undefined!);
 
   useEffect(() => {
     if (!user || !Device.isDevice) return;
@@ -49,7 +51,7 @@ export function usePushNotifications() {
 
     return () => {
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
     };
   }, [user]);
