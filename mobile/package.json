@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/slider": "^5.1.2",
     "@supabase/supabase-js": "^2.100.1",
     "expo": "55.0.10-canary-20260327-0789fbc",
     "expo-constants": "55.0.10-canary-20260327-0789fbc",
