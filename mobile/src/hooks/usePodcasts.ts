@@ -60,7 +60,7 @@ export function usePodcasts() {
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
-    if (!error && data) setPodcasts((data as PodcastRow[]).map(toPodcast));
+    if (!error && data) setPodcasts((data as unknown as PodcastRow[]).map(toPodcast));
     setLoading(false);
     setRefreshing(false);
   }, [user]);
