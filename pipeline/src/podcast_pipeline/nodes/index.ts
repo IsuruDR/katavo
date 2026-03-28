@@ -7,3 +7,4 @@ export { qualityGate } from "./qualityGate.js";
 export { scriptWriter } from "./scriptWriter.js";
 export { adInjector } from "./adInjector.js";
 export { audioProducer, splitScriptSegments } from "./audioProducer.js";
+export { metadataWriter } from "./metadataWriter.js";
