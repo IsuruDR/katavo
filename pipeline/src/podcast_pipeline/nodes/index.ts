@@ -5,3 +5,4 @@ export { deepResearcher } from "./deepResearcher.js";
 export { factChecker } from "./factChecker.js";
 export { qualityGate } from "./qualityGate.js";
 export { scriptWriter } from "./scriptWriter.js";
+export { adInjector } from "./adInjector.js";
