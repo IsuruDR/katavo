@@ -5,13 +5,35 @@
 // Quality gate
 export const CREDIBILITY_THRESHOLD = 0.7;
 export const MAX_RESEARCH_RETRIES = 2;
+export const MIN_SOURCES_THRESHOLD = 3;
 
-// Cost ceiling per tier (USD)
-export const RESEARCH_COST_CEILING: Record<string, number> = {
-  free: 3.0,
-  plus: 3.0,
-  pro: 5.0,
+// Deep research
+export const MAX_TOOL_CALLS: Record<string, number> = {
+  free: 20,
+  plus: 20,
+  pro: 40,
 };
+export const DEEP_RESEARCH_POLL_INTERVAL = 10_000; // 10s between polls
+export const DEEP_RESEARCH_TIMEOUT = 900_000; // 15 minutes
+
+export const DEEP_RESEARCH_PROMPT = `You are conducting deep research for a podcast episode.
+Given a research brief, produce a comprehensive, well-cited research document.
+
+Structure your output as a JSON object with:
+- "sections": list of {{"title": string, "content": string}} — 3-6 sections covering the topic thoroughly with inline citations
+- "sources": list of {{"url": string, "title": string}} — all sources referenced
+
+Requirements:
+- Every factual claim must cite at least one source
+- Cover the topic from multiple angles
+- Prioritize recent, authoritative sources
+- Include specific data, statistics, and expert quotes where available
+{trustedSourceContext}
+{retryContext}
+
+Research brief:
+{researchBrief}
+`;
 
 // Script targets
 export const TARGET_WORD_COUNT = 1500; // ~10 minutes at 150 wpm
@@ -28,31 +50,6 @@ Output a JSON object with:
 - "keyQuestions": list of 3-5 specific questions the research should answer
 `;
 
-export const RESEARCH_PLANNER_PROMPT = `You are a research planner for a deep-dive podcast.
-Given a research brief, produce a research plan.
-
-Output a JSON object with:
-- "queries": list of 3-5 specific search queries to execute
-- "angles": different perspectives to explore
-- "prioritySources": types of sources to prioritize (academic, news, expert blogs, etc.)
-{retryContext}
-`;
-
-export const FACT_CHECKER_PROMPT = `You are a fact-checker for a podcast script.
-Given a research document with claims and citations, assess credibility.
-
-For each major claim, evaluate:
-1. Is it supported by multiple independent sources?
-2. Are the sources reliable and recent?
-3. Are there contradictions in the evidence?
-
-Output a JSON object with:
-- "claims": list of {"claim": string, "confidence": number, "sourcesCount": number, "issues": string}
-- "overallScore": number between 0 and 1
-- "summary": brief text summary of credibility assessment
-- "gaps": list of specific areas that need more research (empty if all clear)
-`;
-
 export const SCRIPT_WRITER_PROMPT = `You are a podcast script writer creating a single-narrator deep-dive episode.
 
 Rules:
@@ -65,8 +62,24 @@ Rules:
 - Do NOT include any harmful, misleading, or offensive content
 {disclaimerContext}
 
+After writing the script, output a JSON block with a chapter-to-research mapping.
+For each [CHAPTER: Title] in the script, map the chapter title to:
+- "researchSections": indexes into the research document sections array that this chapter draws from
+- "sourceIndexes": indexes into the sources array that this chapter references
+
+Output the mapping as a fenced JSON block after the script:
+\`\`\`chapter_research_map
+{{
+  "Chapter Title": {{ "researchSections": [0, 1], "sourceIndexes": [0, 2] }},
+  ...
+}}
+\`\`\`
+
 Research document:
 {researchDocument}
+
+Sources:
+{sources}
 `;
 
 export const AD_PRE_ROLL_MARKER = "[AD:PRE_ROLL]";
