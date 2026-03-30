@@ -18,34 +18,19 @@ describe("PipelineState", () => {
     expect(state.researchIterations).toBe(0);
     expect(state.status).toBe("queued");
     expect(state.credibilityScore).toBeNull();
+    expect(state.chapterResearchMap).toBeNull();
   });
 
-  it("should accept all pipeline fields", () => {
-    const state = makeInitialState({
-      podcastId: "test-123",
-      userId: "user-456",
-      topic: "AI",
-      clarifyingAnswers: [],
-      hasAds: false,
-      trustedSourceUrls: [],
-      tier: "pro",
-      researchBrief: "brief",
-      researchPlan: "plan",
-      researchDocument: { sections: [] },
-      sources: [],
-      credibilityScore: 0.9,
-      credibilityReport: "all good",
-      researchIterations: 2,
-      script: "Hello world",
-      adMarkers: { preRoll: 0, midRoll: 120 },
-      audioUrl: "https://example.com/audio.mp3",
-      transcript: "Hello world",
-      chapterMarkers: [{ timestampSeconds: 0, title: "Intro" }],
-      durationSeconds: 600,
-      status: "complete",
-      errorMessage: null,
-    });
+  it("should not have researchPlan field", () => {
+    const state = makeInitialState({});
+    expect("researchPlan" in state).toBe(false);
+  });
 
-    expect(state.researchIterations).toBe(2);
+  it("should accept chapterResearchMap", () => {
+    const map = {
+      "The Quantum Threat": { researchSections: [0, 1], sourceIndexes: [0, 1, 2] },
+    };
+    const state = makeInitialState({ chapterResearchMap: map });
+    expect(state.chapterResearchMap).toEqual(map);
   });
 });

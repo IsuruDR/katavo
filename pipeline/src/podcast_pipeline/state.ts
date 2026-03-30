@@ -5,6 +5,14 @@
 
 import { Annotation } from "@langchain/langgraph";
 
+/** Per-chapter mapping to research sections and source indexes */
+export interface ChapterResearchEntry {
+  researchSections: number[];
+  sourceIndexes: number[];
+}
+
+export type ChapterResearchMap = Record<string, ChapterResearchEntry> | null;
+
 export const PipelineState = Annotation.Root({
   // Input (set at pipeline start)
   podcastId: Annotation<string>,
@@ -17,15 +25,15 @@ export const PipelineState = Annotation.Root({
 
   // Research phase
   researchBrief: Annotation<string>,
-  researchPlan: Annotation<string>,
   researchDocument: Annotation<Record<string, unknown>>, // Structured JSONB
-  sources: Annotation<Record<string, unknown>[]>, // [{url, title, snippet, credibilityScore}]
+  sources: Annotation<Record<string, unknown>[]>, // [{url, title}]
   credibilityScore: Annotation<number | null>,
   credibilityReport: Annotation<string>,
   researchIterations: Annotation<number>,
 
   // Script phase
   script: Annotation<string>,
+  chapterResearchMap: Annotation<ChapterResearchMap>,
   adMarkers: Annotation<Record<string, number> | null>, // {preRoll: seconds, midRoll: seconds}
 
   // Audio phase
@@ -56,13 +64,13 @@ export function makeInitialState(overrides: Partial<PipelineStateType>): Pipelin
     trustedSourceUrls: [],
     tier: "free",
     researchBrief: "",
-    researchPlan: "",
     researchDocument: {},
     sources: [],
     credibilityScore: null,
     credibilityReport: "",
     researchIterations: 0,
     script: "",
+    chapterResearchMap: null,
     adMarkers: null,
     audioUrl: "",
     transcript: "",
