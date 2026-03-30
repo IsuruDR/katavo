@@ -51,7 +51,7 @@ export async function metadataWriter(
 
   const supabase = getSupabaseClient();
 
-  // Update podcast record
+  // Update podcast record (now includes chapter_research_map)
   await supabase
     .from("podcasts")
     .update({
@@ -60,10 +60,11 @@ export async function metadataWriter(
       transcript,
       duration_seconds: duration,
       chapter_markers: chapters,
+      chapter_research_map: state.chapterResearchMap ?? null,
     })
     .eq("id", podcastId);
 
-  // Store research context for Q&A
+  // Store research context for Q&A / Deep Dive
   await supabase
     .from("research_contexts")
     .insert({

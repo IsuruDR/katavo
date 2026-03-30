@@ -47,11 +47,69 @@ describe("metadataWriter", () => {
       sources: [],
       credibilityScore: 0.85,
       researchIterations: 1,
+      chapterResearchMap: null,
     };
 
     const result = await metadataWriter(state as any);
 
     expect(result.status).toBe("complete");
     expect(result.chapterMarkers!.length).toBeGreaterThan(0);
+  });
+
+  it("should include chapter_research_map in podcast update when present", async () => {
+    vi.clearAllMocks();
+
+    const chapterMap = {
+      "Intro": { researchSections: [0], sourceIndexes: [0] },
+    };
+
+    const state = {
+      podcastId: "test-456",
+      userId: "user-789",
+      topic: "AI safety",
+      script: "[CHAPTER: Intro]\nHello world",
+      audioUrl: "https://storage/audio.mp3",
+      durationSeconds: 300,
+      researchDocument: { sections: [{ title: "Intro", content: "..." }] },
+      sources: [{ url: "https://a.com", title: "A" }],
+      credibilityScore: 0.9,
+      researchIterations: 1,
+      chapterResearchMap: chapterMap,
+    };
+
+    await metadataWriter(state as any);
+
+    // Verify podcast update includes chapter_research_map
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chapter_research_map: chapterMap,
+      }),
+    );
+  });
+
+  it("should set chapter_research_map to null in update when not provided", async () => {
+    vi.clearAllMocks();
+
+    const state = {
+      podcastId: "test-789",
+      userId: "user-012",
+      topic: "climate",
+      script: "[CHAPTER: Intro]\nHello",
+      audioUrl: "https://storage/audio.mp3",
+      durationSeconds: 600,
+      researchDocument: { sections: [] },
+      sources: [],
+      credibilityScore: 0.85,
+      researchIterations: 1,
+      chapterResearchMap: null,
+    };
+
+    await metadataWriter(state as any);
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chapter_research_map: null,
+      }),
+    );
   });
 });
