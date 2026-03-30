@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 
-// scriptWriter creates an OpenAI client at module level, so we mock it
-// to avoid requiring OPENAI_API_KEY for graph compilation tests.
+// Mock OpenAI (used by scriptWriter and deepResearch at module level)
 vi.mock("openai", () => ({
   default: vi.fn().mockImplementation(() => ({
     chat: { completions: { create: vi.fn() } },
     moderations: { create: vi.fn() },
+    responses: { create: vi.fn(), retrieve: vi.fn() },
   })),
 }));
 
