@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("openai", () => {
   const mockCreate = vi.fn();
@@ -13,26 +13,84 @@ vi.mock("openai", () => {
   };
 });
 
-import { scriptWriter } from "../src/podcast_pipeline/nodes/scriptWriter.js";
+import { scriptWriter, parseChapterResearchMap } from "../src/podcast_pipeline/nodes/scriptWriter.js";
+
+describe("parseChapterResearchMap", () => {
+  it("should extract chapter_research_map from fenced JSON block", () => {
+    const text = `[CHAPTER: Intro]
+Some script content...
+
+\`\`\`chapter_research_map
+{
+  "Intro": { "researchSections": [0], "sourceIndexes": [0, 1] },
+  "Deep Dive": { "researchSections": [1, 2], "sourceIndexes": [2] }
+}
+\`\`\``;
+
+    const result = parseChapterResearchMap(text, 3, 3);
+
+    expect(result).toEqual({
+      Intro: { researchSections: [0], sourceIndexes: [0, 1] },
+      "Deep Dive": { researchSections: [1, 2], sourceIndexes: [2] },
+    });
+  });
+
+  it("should clamp out-of-bounds indexes", () => {
+    const text = `script
+\`\`\`chapter_research_map
+{
+  "Ch1": { "researchSections": [0, 10], "sourceIndexes": [0, 99] }
+}
+\`\`\``;
+
+    const result = parseChapterResearchMap(text, 2, 3);
+
+    expect(result).toEqual({
+      Ch1: { researchSections: [0, 1], sourceIndexes: [0, 2] },
+    });
+  });
+
+  it("should return null for malformed JSON", () => {
+    const text = `script
+\`\`\`chapter_research_map
+not valid json
+\`\`\``;
+
+    const result = parseChapterResearchMap(text, 2, 3);
+    expect(result).toBeNull();
+  });
+
+  it("should return null when no chapter_research_map block exists", () => {
+    const text = "[CHAPTER: Intro]\nJust a script, no map block.";
+    const result = parseChapterResearchMap(text, 2, 3);
+    expect(result).toBeNull();
+  });
+});
 
 describe("scriptWriter", () => {
-  it("should produce a script with chapters", async () => {
-    const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
-      await import("openai") as any;
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-    mockCreate.mockResolvedValue({
-      choices: [{
-        message: {
-          content: `[CHAPTER: The Quantum Threat]
-Imagine a computer so powerful it could crack every encryption...
+  it("should produce a script and chapterResearchMap", async () => {
+    const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
+      (await import("openai")) as any;
+
+    const scriptWithMap = `[CHAPTER: The Quantum Threat]
+Imagine a computer so powerful...
 
 [CHAPTER: Fighting Back]
-But researchers aren't sitting idle. NIST has been working on...
+But researchers aren't idle...
 
-[CHAPTER: What It Means For You]
-So what does this mean for the average person?...`,
-        },
-      }],
+\`\`\`chapter_research_map
+{
+  "The Quantum Threat": { "researchSections": [0], "sourceIndexes": [0, 1] },
+  "Fighting Back": { "researchSections": [1], "sourceIndexes": [1, 2] }
+}
+\`\`\``;
+
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: scriptWithMap } }],
     });
 
     mockModCreate.mockResolvedValue({
@@ -40,23 +98,38 @@ So what does this mean for the average person?...`,
     });
 
     const state = {
-      researchDocument: { sections: [{ title: "Test", content: "Content" }] },
+      researchDocument: {
+        sections: [
+          { title: "Threat", content: "..." },
+          { title: "Defense", content: "..." },
+        ],
+      },
+      sources: [
+        { url: "https://a.com", title: "A" },
+        { url: "https://b.com", title: "B" },
+        { url: "https://c.com", title: "C" },
+      ],
       needsDisclaimer: false,
     };
 
     const result = await scriptWriter(state as any);
 
-    expect(result.script).toBeDefined();
-    expect(result.script).toContain("[CHAPTER:");
+    expect(result.script).toContain("[CHAPTER: The Quantum Threat]");
+    // Script should not contain the map block
+    expect(result.script).not.toContain("chapter_research_map");
+    expect(result.chapterResearchMap).toEqual({
+      "The Quantum Threat": { researchSections: [0], sourceIndexes: [0, 1] },
+      "Fighting Back": { researchSections: [1], sourceIndexes: [1, 2] },
+    });
     expect(result.status).toBe("scripting");
   });
 
-  it("should add disclaimer when needed", async () => {
+  it("should return null chapterResearchMap when LLM omits the block", async () => {
     const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
-      await import("openai") as any;
+      (await import("openai")) as any;
 
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: "Script with disclaimer..." } }],
+      choices: [{ message: { content: "[CHAPTER: Intro]\nJust a plain script." } }],
     });
 
     mockModCreate.mockResolvedValue({
@@ -65,13 +138,37 @@ So what does this mean for the average person?...`,
 
     const state = {
       researchDocument: { sections: [] },
-      needsDisclaimer: true,
+      sources: [],
+      needsDisclaimer: false,
     };
 
     const result = await scriptWriter(state as any);
 
-    const callArgs = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0];
-    const systemMsg = callArgs.messages[0].content;
-    expect(systemMsg.toLowerCase()).toMatch(/limited|disclaimer/);
+    expect(result.script).toBeDefined();
+    expect(result.chapterResearchMap).toBeNull();
+  });
+
+  it("should fail when content is flagged by moderation", async () => {
+    const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
+      (await import("openai")) as any;
+
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "Flagged content..." } }],
+    });
+
+    mockModCreate.mockResolvedValue({
+      results: [{ flagged: true }],
+    });
+
+    const state = {
+      researchDocument: { sections: [] },
+      sources: [],
+      needsDisclaimer: false,
+    };
+
+    const result = await scriptWriter(state as any);
+
+    expect(result.status).toBe("failed");
+    expect(result.errorMessage).toContain("moderation");
   });
 });
