@@ -6,11 +6,14 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const REVENUCAT_WEBHOOK_SECRET = Deno.env.get("REVENUCAT_WEBHOOK_SECRET")!;
 
-const TIER_CREDITS: Record<string, { tier: string; credits: number }> = {
-  "plus_monthly": { tier: "plus", credits: 8 },
-  "plus_annual": { tier: "plus", credits: 8 },
-  "pro_monthly": { tier: "pro", credits: 20 },
-  "pro_annual": { tier: "pro", credits: 20 },
+const TIER_CONFIG: Record<
+  string,
+  { tier: string; credits: number; deepDiveMinutes: number }
+> = {
+  "plus_monthly": { tier: "plus", credits: 8, deepDiveMinutes: 15 },
+  "plus_annual": { tier: "plus", credits: 8, deepDiveMinutes: 15 },
+  "pro_monthly": { tier: "pro", credits: 20, deepDiveMinutes: 45 },
+  "pro_annual": { tier: "pro", credits: 20, deepDiveMinutes: 45 },
 };
 
 serve(async (req) => {
@@ -29,7 +32,7 @@ serve(async (req) => {
     switch (type) {
       case "INITIAL_PURCHASE":
       case "RENEWAL": {
-        const config = TIER_CREDITS[product_id];
+        const config = TIER_CONFIG[product_id];
         if (!config) break;
 
         await serviceClient
@@ -39,6 +42,8 @@ serve(async (req) => {
             status: "active",
             credits_per_month: config.credits,
             credits_remaining: config.credits,
+            deep_dive_minutes_per_month: config.deepDiveMinutes,
+            deep_dive_minutes_remaining: config.deepDiveMinutes,
             renewal_date: expiration_at_ms
               ? new Date(expiration_at_ms).toISOString()
               : null,
@@ -80,6 +85,8 @@ serve(async (req) => {
             status: "active",
             credits_per_month: 1,
             credits_remaining: 1,
+            deep_dive_minutes_per_month: 0,
+            deep_dive_minutes_remaining: 0,
             revenucat_subscription_id: null,
           })
           .eq("user_id", userId);
@@ -87,7 +94,7 @@ serve(async (req) => {
       }
 
       case "PRODUCT_CHANGE": {
-        const config = TIER_CREDITS[product_id];
+        const config = TIER_CONFIG[product_id];
         if (!config) break;
 
         const { data: current } = await serviceClient
@@ -106,6 +113,8 @@ serve(async (req) => {
               tier: config.tier,
               credits_per_month: config.credits,
               credits_remaining: config.credits,
+              deep_dive_minutes_per_month: config.deepDiveMinutes,
+              deep_dive_minutes_remaining: config.deepDiveMinutes,
             })
             .eq("user_id", userId);
         }
