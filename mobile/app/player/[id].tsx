@@ -47,9 +47,9 @@ export default function PlayerScreen() {
   );
 
   const isPaidTier =
-    subscription && (subscription.tier === "plus" || subscription.tier === "pro");
+    !!subscription && (subscription.tier === "plus" || subscription.tier === "pro");
   const hasMinutes =
-    isPaidTier && subscription.deepDiveMinutesRemaining > 0;
+    isPaidTier && subscription!.deepDiveMinutesRemaining > 0;
 
   const handleDive = useCallback(
     (chapterTitle: string) => {

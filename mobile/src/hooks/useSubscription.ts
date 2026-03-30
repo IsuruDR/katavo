@@ -50,7 +50,7 @@ export function useSubscription() {
       )
       .eq("user_id", user.id)
       .single();
-    if (data) setSubscription(toSubscription(data as SubscriptionRow));
+    if (data) setSubscription(toSubscription(data as unknown as SubscriptionRow));
     setLoading(false);
   }, [user]);
 
