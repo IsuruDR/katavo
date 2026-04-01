@@ -4,14 +4,14 @@
  *
  * Responsibilities:
  * - Calls start-deep-dive Edge Function to validate and create session
- * - Initializes ElevenLabs Conversational AI agent with research context
+ * - Uses @elevenlabs/react-native useConversation hook for voice AI
  * - Manages session state (connecting, active, ending, error)
  * - Client-side minute countdown timer
  * - Calls end-deep-dive Edge Function on session end
- * - Handles connection drops (3 retries with backoff)
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useConversation } from "@elevenlabs/react-native";
 import { supabase } from "../lib/supabase";
 import { buildAgentContext, getAgentId } from "../services/elevenlabs";
 
@@ -31,6 +31,7 @@ interface UseDeepDiveReturn {
   minutesRemaining: number;
   showWarning: boolean;
   errorMessage: string | null;
+  isSpeaking: boolean;
   startSession: (podcastId: string, chapterTitle: string) => Promise<void>;
   endSession: () => Promise<{ deepDiveMinutesRemaining: number } | null>;
   sendTextMessage: (text: string) => void;
@@ -45,16 +46,48 @@ export function useDeepDive(): UseDeepDiveReturn {
 
   const sessionIdRef = useRef<string | null>(null);
   const elevenlabsSessionIdRef = useRef<string | null>(null);
-  const conversationRef = useRef<any>(null);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initialMinutesRef = useRef<number>(0);
   const statusRef = useRef<DeepDiveStatus>("idle");
+  const contextualUpdateRef = useRef<string | null>(null);
 
   // Keep statusRef in sync
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  const conversation = useConversation({
+    onConnect: ({ conversationId }) => {
+      elevenlabsSessionIdRef.current = conversationId;
+      startTimeRef.current = Date.now();
+      setStatus("active");
+
+      // Send contextual update once connected
+      if (contextualUpdateRef.current) {
+        conversation.sendContextualUpdate(contextualUpdateRef.current);
+        contextualUpdateRef.current = null;
+      }
+    },
+    onDisconnect: () => {
+      if (statusRef.current === "active") {
+        endSession();
+      }
+    },
+    onMessage: (message) => {
+      setTranscript((prev) => [
+        ...prev,
+        {
+          role: message.source === "ai" ? "assistant" : "user",
+          text: message.message,
+        },
+      ]);
+    },
+    onError: (message) => {
+      setErrorMessage(message);
+      setStatus("error");
+    },
+  });
 
   // Client-side countdown timer
   useEffect(() => {
@@ -88,13 +121,10 @@ export function useDeepDive(): UseDeepDiveReturn {
     setStatus("ending");
 
     // Stop ElevenLabs conversation
-    if (conversationRef.current) {
-      try {
-        await conversationRef.current.endSession();
-      } catch {
-        // Best effort
-      }
-      conversationRef.current = null;
+    try {
+      await conversation.endSession();
+    } catch {
+      // Best effort
     }
 
     // Clear timer
@@ -137,7 +167,7 @@ export function useDeepDive(): UseDeepDiveReturn {
 
     setStatus("ended");
     return null;
-  }, []);
+  }, [conversation]);
 
   const startSession = useCallback(
     async (podcastId: string, chapterTitle: string) => {
@@ -175,7 +205,7 @@ export function useDeepDive(): UseDeepDiveReturn {
         setMinutesRemaining(data.minutesRemaining);
 
         // Build agent context
-        const { systemPrompt, firstMessage } = buildAgentContext({
+        const { contextualUpdate } = buildAgentContext({
           researchDocument: data.researchDocument,
           sources: data.sources,
           chapterResearchMap: data.chapterResearchMap,
@@ -183,70 +213,34 @@ export function useDeepDive(): UseDeepDiveReturn {
           chapterTitle,
         });
 
-        // Initialize ElevenLabs conversation
-        // Dynamic import to avoid loading SDK until needed
-        const { Conversation } = await import("@11labs/react-native");
+        // Store contextual update to send after connection is established
+        contextualUpdateRef.current = contextualUpdate;
 
-        const conversation = await Conversation.startSession({
+        // Start ElevenLabs conversation session
+        conversation.startSession({
           agentId: getAgentId(),
-          overrides: {
-            agent: {
-              prompt: { prompt: systemPrompt },
-              firstMessage,
-            },
-          },
-          onConnect: ({ conversationId }: { conversationId: string }) => {
-            elevenlabsSessionIdRef.current = conversationId;
-            startTimeRef.current = Date.now();
-            setStatus("active");
-          },
-          onDisconnect: () => {
-            if (statusRef.current === "active") {
-              endSession();
-            }
-          },
-          onMessage: ({
-            message,
-            source,
-          }: {
-            message: string;
-            source: "user" | "ai";
-          }) => {
-            setTranscript((prev) => [
-              ...prev,
-              {
-                role: source === "ai" ? "assistant" : "user",
-                text: message,
-              },
-            ]);
-          },
-          onError: (error: Error) => {
-            setErrorMessage(error.message);
-            setStatus("error");
-          },
         });
-
-        conversationRef.current = conversation;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";
         setErrorMessage(message);
         setStatus("error");
       }
     },
-    [endSession],
+    [conversation, endSession],
   );
 
   const sendTextMessage = useCallback(
     (text: string) => {
-      if (conversationRef.current && status === "active") {
+      if (status === "active") {
         // Add to transcript immediately
         setTranscript((prev) => [...prev, { role: "user", text }]);
-        // Note: ElevenLabs text input may need different API depending on SDK version
-        // The conversation.sendUserInput method sends text as user speech
-        conversationRef.current.sendUserInput?.(text);
+        // Send as contextual update (text-based input for voice agent)
+        conversation.sendContextualUpdate(text);
+        // Signal user activity
+        conversation.sendUserActivity();
       }
     },
-    [status],
+    [status, conversation],
   );
 
   return {
@@ -255,6 +249,7 @@ export function useDeepDive(): UseDeepDiveReturn {
     minutesRemaining,
     showWarning,
     errorMessage,
+    isSpeaking: conversation.isSpeaking,
     startSession,
     endSession,
     sendTextMessage,

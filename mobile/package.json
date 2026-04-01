@@ -9,6 +9,11 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "^13.0.0",
+    "@elevenlabs/react-native": "^1.0.1",
+    "@livekit/react-native": "^2.10.0",
+    "@livekit/react-native-expo-plugin": "^1.0.2",
+    "@livekit/react-native-webrtc": "^144.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/slider": "^5.1.2",
     "@supabase/supabase-js": "^2.100.1",
@@ -19,6 +24,7 @@
     "expo-notifications": "55.0.15-canary-20260327-0789fbc",
     "expo-router": "55.0.9-canary-20260327-0789fbc",
     "expo-status-bar": "55.0.5-canary-20260327-0789fbc",
+    "livekit-client": "^2.18.0",
     "react": "19.2.0",
     "react-native": "0.83.4",
     "react-native-track-player": "^4.1.2",

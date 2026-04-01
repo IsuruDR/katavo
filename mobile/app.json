@@ -13,7 +13,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app needs microphone access for Deep Dive voice conversations with the AI researcher."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,13 +25,23 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "RECORD_AUDIO",
+        "ACCESS_NETWORK_STATE",
+        "INTERNET",
+        "MODIFY_AUDIO_SETTINGS",
+        "WAKE_LOCK",
+        "BLUETOOTH"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc"
     ]
   }
 }

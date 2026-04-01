@@ -1,10 +1,10 @@
 // mobile/src/services/elevenlabs.ts
 /**
  * ElevenLabs Conversational AI service.
- * Handles agent configuration, context preparation, and session management.
+ * Handles agent configuration and context preparation.
  *
- * Usage: Called by useDeepDive hook to initialize a conversation agent
- * with the podcast's research context for a specific chapter.
+ * The actual conversation lifecycle is managed by the `useConversation` hook
+ * from `@elevenlabs/react-native`, used in the `useDeepDive` hook.
  */
 
 const ELEVENLABS_AGENT_ID = process.env.EXPO_PUBLIC_ELEVENLABS_AGENT_ID ?? "";
@@ -41,13 +41,14 @@ function estimateTokens(text: string): number {
 }
 
 /**
- * Build the system prompt and context for the ElevenLabs agent.
- * If the full research document exceeds MAX_CONTEXT_TOKENS, truncate:
- * - Keep chapter-relevant sections in full
- * - Summarize/truncate the rest
+ * Build the contextual update text to send to the ElevenLabs agent
+ * via `conversation.sendContextualUpdate()`.
+ *
+ * This replaces the old approach of passing overrides at session start.
+ * The agent receives this as grounding context for the conversation.
  */
 export function buildAgentContext(context: DeepDiveContext): {
-  systemPrompt: string;
+  contextualUpdate: string;
   firstMessage: string;
 } {
   const { researchDocument, sources, chapterResearchMap, transcript, chapterTitle } =
@@ -99,7 +100,7 @@ export function buildAgentContext(context: DeepDiveContext): {
     })
     .join("\n");
 
-  const systemPrompt = `You are a researcher who produced a podcast episode. The listener wants to go deeper on the chapter "${chapterTitle}".
+  const contextualUpdate = `You are a researcher who produced a podcast episode. The listener wants to go deeper on the chapter "${chapterTitle}".
 
 Draw from the full research below, especially the sections marked as priority for this chapter. Cite sources by number when relevant. Be conversational, clear, and thorough.
 
@@ -119,7 +120,7 @@ ${transcript.slice(0, 2000)}${transcript.length > 2000 ? "..." : ""}`;
 
   const firstMessage = `Hey! I see you're diving deeper into "${chapterTitle}". What would you like to explore?`;
 
-  return { systemPrompt, firstMessage };
+  return { contextualUpdate, firstMessage };
 }
 
 /**

@@ -37,6 +37,7 @@ export default function DeepDiveScreen() {
     minutesRemaining,
     showWarning,
     errorMessage,
+    isSpeaking,
     startSession,
     endSession,
     sendTextMessage,
@@ -115,6 +116,13 @@ export default function DeepDiveScreen() {
           <Text style={styles.warningText}>
             Less than 2 minutes remaining
           </Text>
+        </View>
+      )}
+
+      {/* Speaking indicator */}
+      {isSpeaking && (
+        <View style={styles.speakingIndicator}>
+          <Text style={styles.speakingText}>AI is speaking...</Text>
         </View>
       )}
 
@@ -260,6 +268,14 @@ const styles = StyleSheet.create({
     borderColor: "#333",
   },
   endButtonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+
+  // Speaking indicator
+  speakingIndicator: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    backgroundColor: "#6366f110",
+  },
+  speakingText: { color: "#6366f1", fontSize: 13, textAlign: "center" },
 
   // Error
   errorContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },

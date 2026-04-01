@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Slot, useRouter, useSegments } from "expo-router";
+import { ConversationProvider } from "@elevenlabs/react-native";
 import { useAuth } from "../src/hooks/useAuth";
 import { usePushNotifications } from "../src/hooks/usePushNotifications";
 import { LoadingOverlay } from "../src/components/LoadingOverlay";
@@ -24,5 +25,9 @@ export default function RootLayout() {
 
   if (loading) return <LoadingOverlay message="Loading..." />;
 
-  return <Slot />;
+  return (
+    <ConversationProvider>
+      <Slot />
+    </ConversationProvider>
+  );
 }
