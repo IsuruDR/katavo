@@ -129,11 +129,21 @@ serve(async (req) => {
               .single();
 
             if (retrySub) {
-              await serviceClient
+              const { data: retryUpdated } = await serviceClient
                 .from("subscriptions")
                 .update({ credits_remaining: retrySub.credits_remaining + creditAmount })
                 .eq("user_id", userId)
-                .eq("credits_remaining", retrySub.credits_remaining);
+                .eq("credits_remaining", retrySub.credits_remaining)
+                .select("credits_remaining")
+                .single();
+
+              if (!retryUpdated) {
+                console.error(`CRITICAL: Failed to add credit for user ${userId} product ${product_id} after retry`);
+                return new Response(
+                  JSON.stringify({ error: "Credit allocation failed, please retry" }),
+                  { status: 500, headers: { "Content-Type": "application/json" } }
+                );
+              }
             }
           }
 
