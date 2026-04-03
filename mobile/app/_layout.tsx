@@ -1,12 +1,20 @@
 import { useEffect } from "react";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { ConversationProvider } from "@elevenlabs/react-native";
-import { useAuth } from "../src/hooks/useAuth";
+import { AuthProvider, useAuth } from "../src/hooks/useAuth";
 import { usePushNotifications } from "../src/hooks/usePushNotifications";
 import { configureRevenueCat } from "../src/services/revenucat";
 import { LoadingOverlay } from "../src/components/LoadingOverlay";
 
 export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <RootLayoutInner />
+    </AuthProvider>
+  );
+}
+
+function RootLayoutInner() {
   const { session, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
