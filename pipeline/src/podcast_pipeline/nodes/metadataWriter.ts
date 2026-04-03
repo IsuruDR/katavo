@@ -52,7 +52,7 @@ export async function metadataWriter(
   const supabase = getSupabaseClient();
 
   // Update podcast record (now includes chapter_research_map)
-  await supabase
+  const { error: updateError } = await supabase
     .from("podcasts")
     .update({
       status: "complete",
@@ -63,9 +63,11 @@ export async function metadataWriter(
       chapter_research_map: state.chapterResearchMap ?? null,
     })
     .eq("id", podcastId);
+  if (updateError)
+    throw new Error(`Failed to update podcast: ${updateError.message}`);
 
   // Store research context for Q&A / Deep Dive
-  await supabase
+  const { error: insertError } = await supabase
     .from("research_contexts")
     .insert({
       podcast_id: podcastId,
@@ -74,6 +76,10 @@ export async function metadataWriter(
       overall_credibility_score: state.credibilityScore,
       research_iterations: state.researchIterations ?? 1,
     });
+  if (insertError)
+    throw new Error(
+      `Failed to insert research context: ${insertError.message}`,
+    );
 
   // Send push notification
   if (NOTIFY_COMPLETE_URL) {

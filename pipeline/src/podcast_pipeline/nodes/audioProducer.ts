@@ -117,9 +117,13 @@ export async function audioProducer(
   const supabase = getSupabaseClient();
   const storagePath = `${userId}/${podcastId}.mp3`;
 
-  await supabase.storage.from("podcast-audio").upload(storagePath, audioBytes, {
-    contentType: "audio/mpeg",
-  });
+  const { error: uploadError } = await supabase.storage
+    .from("podcast-audio")
+    .upload(storagePath, audioBytes, {
+      contentType: "audio/mpeg",
+    });
+  if (uploadError)
+    throw new Error(`Failed to upload audio: ${uploadError.message}`);
 
   const { data } = supabase.storage
     .from("podcast-audio")

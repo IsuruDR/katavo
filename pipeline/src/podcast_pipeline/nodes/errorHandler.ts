@@ -12,13 +12,18 @@ export async function handlePipelineFailure(
 ): Promise<void> {
   const supabase = getSupabaseClient();
 
-  await supabase
+  const { error: updateError } = await supabase
     .from("podcasts")
     .update({
       status: "failed",
       error_message: errorMessage,
     })
     .eq("id", podcastId);
+  if (updateError) {
+    console.error(
+      `Failed to update podcast failure status: ${updateError.message}`,
+    );
+  }
 
   if (NOTIFY_COMPLETE_URL) {
     try {
