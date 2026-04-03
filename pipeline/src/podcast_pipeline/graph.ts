@@ -6,7 +6,7 @@
  */
 
 import { StateGraph, END } from "@langchain/langgraph";
-import { PipelineState } from "./state.js";
+import { PipelineState, makeInitialState } from "./state.js";
 import type { PipelineStateType } from "./state.js";
 import { briefBuilder } from "./nodes/briefBuilder.js";
 import { deepResearch } from "./nodes/deepResearch.js";
@@ -15,6 +15,7 @@ import { scriptWriter } from "./nodes/scriptWriter.js";
 import { adInjector } from "./nodes/adInjector.js";
 import { audioProducer } from "./nodes/audioProducer.js";
 import { metadataWriter } from "./nodes/metadataWriter.js";
+import { handlePipelineFailure } from "./nodes/errorHandler.js";
 
 function routeAfterQualityGate(state: PipelineStateType): string {
   if (state.shouldRetry) {
@@ -54,3 +55,16 @@ const workflow = new StateGraph(PipelineState)
   .addEdge("metadataWriter", END);
 
 export const graph = workflow.compile();
+
+export async function runPipeline(input: Partial<PipelineStateType>): Promise<PipelineStateType> {
+  const state = makeInitialState(input);
+  try {
+    return await graph.invoke(state);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (state.podcastId) {
+      await handlePipelineFailure(state.podcastId, message);
+    }
+    throw error;
+  }
+}
