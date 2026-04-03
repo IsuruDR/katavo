@@ -1,28 +1,28 @@
 // mobile/app/(tabs)/account.tsx
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useAuth } from "../../src/hooks/useAuth";
 import { useSubscription } from "../../src/hooks/useSubscription";
 import { CreditBalance } from "../../src/components/CreditBalance";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
+import { SubscriptionModal } from "../../src/components/SubscriptionModal";
+import { PaywallScreen } from "../../src/components/PaywallScreen";
 
 const CREDIT_PRICES: Record<string, number> = { free: 5, plus: 4, pro: 3 };
 
 export default function Account() {
   const { user, signOut } = useAuth();
-  const { subscription, loading } = useSubscription();
+  const { subscription, loading, refresh } = useSubscription();
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   if (loading) return <LoadingOverlay message="Loading account..." />;
 
   const creditPrice = CREDIT_PRICES[subscription?.tier || "free"];
   const hasDeepDive = subscription && subscription.tier !== "free";
 
-  const handleBuyCredit = () => {
-    Alert.alert("Coming Soon", "Credit purchases will be available via in-app purchase.");
-  };
-
-  const handleUpgrade = () => {
-    Alert.alert("Coming Soon", "Subscription upgrades will be available soon.");
-  };
+  const handleBuyCredit = () => setShowCreditModal(true);
+  const handleUpgrade = () => setShowPaywall(true);
 
   return (
     <View style={styles.container}>
@@ -57,6 +57,19 @@ export default function Account() {
       <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
+
+      <SubscriptionModal
+        visible={showCreditModal}
+        tier={subscription?.tier || "free"}
+        onClose={() => setShowCreditModal(false)}
+        onPurchased={refresh}
+      />
+      {showPaywall && (
+        <PaywallScreen
+          onClose={() => setShowPaywall(false)}
+          onPurchased={() => { setShowPaywall(false); refresh(); }}
+        />
+      )}
     </View>
   );
 }
