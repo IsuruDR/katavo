@@ -3,6 +3,7 @@ import { Slot, useRouter, useSegments } from "expo-router";
 import { ConversationProvider } from "@elevenlabs/react-native";
 import { useAuth } from "../src/hooks/useAuth";
 import { usePushNotifications } from "../src/hooks/usePushNotifications";
+import { configureRevenueCat } from "../src/services/revenucat";
 import { LoadingOverlay } from "../src/components/LoadingOverlay";
 
 export default function RootLayout() {
@@ -10,6 +11,12 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
   usePushNotifications();
+
+  useEffect(() => {
+    if (session?.user) {
+      configureRevenueCat(session.user.id);
+    }
+  }, [session]);
 
   useEffect(() => {
     if (loading) return;

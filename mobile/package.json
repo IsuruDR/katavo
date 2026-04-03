@@ -27,6 +27,7 @@
     "livekit-client": "^2.18.0",
     "react": "19.2.0",
     "react-native": "0.83.4",
+    "react-native-purchases": "^9.15.1",
     "react-native-track-player": "^4.1.2",
     "react-native-url-polyfill": "^3.0.0"
   },
