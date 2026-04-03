@@ -66,19 +66,41 @@ serve(async (req) => {
 
     const hasAds = subscription.tier === "free";
 
-    // Atomic credit deduction: only succeeds if credits_remaining > 0
+    // Optimistic concurrency credit deduction: the CAS guard (.eq("credits_remaining", ...))
+    // ensures the update only succeeds if the value hasn't changed since the read,
+    // preventing lost updates from concurrent requests.
     const { data: updatedSub, error: deductError } = await serviceClient
       .from("subscriptions")
       .update({ credits_remaining: subscription.credits_remaining - 1 })
       .eq("user_id", user.id)
+      .eq("credits_remaining", subscription.credits_remaining) // CAS guard
       .gt("credits_remaining", 0)
       .select("credits_remaining")
       .single();
 
-    if (deductError || !updatedSub) {
+    if (deductError && deductError.code !== "PGRST116") {
+      throw deductError;
+    }
+
+    if (!updatedSub) {
+      // Either credits ran out or a concurrent request updated the row first.
+      // Re-fetch to distinguish the two cases and return an accurate error.
+      const { data: currentSub } = await serviceClient
+        .from("subscriptions")
+        .select("credits_remaining")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!currentSub || currentSub.credits_remaining <= 0) {
+        return new Response(
+          JSON.stringify({ error: "No credits remaining. Purchase more credits to continue." }),
+          { status: 402, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
       return new Response(
-        JSON.stringify({ error: "No credits remaining. Purchase more credits to continue." }),
-        { status: 402, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Credit deduction conflict. Please retry." }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
       );
     }
 
