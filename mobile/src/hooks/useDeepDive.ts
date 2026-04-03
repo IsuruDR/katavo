@@ -15,10 +15,12 @@ import { useConversation } from "@elevenlabs/react-native";
 import { supabase } from "../lib/supabase";
 import { buildAgentContext, getAgentId } from "../services/elevenlabs";
 
-type DeepDiveStatus = "idle" | "connecting" | "active" | "ending" | "ended" | "error";
+type DeepDiveStatus = "idle" | "connecting" | "active" | "reconnecting" | "ending" | "ended" | "error";
 
 const MAX_SESSION_DURATION = 15 * 60; // 15 minutes in seconds
 const WARNING_THRESHOLD = 2 * 60; // Warn at 2 minutes remaining
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_DELAY_MS = 2000;
 
 interface TranscriptEntry {
   role: "user" | "assistant";
@@ -51,6 +53,8 @@ export function useDeepDive(): UseDeepDiveReturn {
   const initialMinutesRef = useRef<number>(0);
   const statusRef = useRef<DeepDiveStatus>("idle");
   const contextualUpdateRef = useRef<string | null>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
+  const reconnectingRef = useRef<boolean>(false);
 
   // Keep statusRef in sync
   useEffect(() => {
@@ -75,8 +79,8 @@ export function useDeepDive(): UseDeepDiveReturn {
       }
     },
     onDisconnect: () => {
-      if (statusRef.current === "active") {
-        endSession();
+      if (statusRef.current === "active" || statusRef.current === "reconnecting") {
+        attemptReconnect();
       }
     },
     onMessage: (message) => {
@@ -121,8 +125,57 @@ export function useDeepDive(): UseDeepDiveReturn {
     };
   }, [status]);
 
+  /**
+   * Attempt to reconnect to the ElevenLabs conversation after an unexpected
+   * disconnect. Retries up to MAX_RECONNECT_ATTEMPTS times with RECONNECT_DELAY_MS
+   * between attempts. Falls back to endSession after all retries are exhausted.
+   */
+  const attemptReconnect = useCallback(async () => {
+    // Guard against concurrent reconnect attempts
+    if (reconnectingRef.current) return;
+    reconnectingRef.current = true;
+    reconnectAttemptsRef.current = 0;
+
+    setStatus("reconnecting");
+
+    while (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+      reconnectAttemptsRef.current += 1;
+      console.log(
+        `Deep Dive reconnect attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS}`,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS));
+
+      // If session was ended externally during the wait, abort reconnection
+      if (statusRef.current === "ending" || statusRef.current === "ended") {
+        reconnectingRef.current = false;
+        return;
+      }
+
+      try {
+        await conversation.startSession({
+          agentId: getAgentId(),
+        });
+        // onConnect callback will set status to "active" and send context
+        reconnectingRef.current = false;
+        reconnectAttemptsRef.current = 0;
+        return;
+      } catch {
+        // Retry on next iteration
+      }
+    }
+
+    // All retries exhausted — end the session
+    reconnectingRef.current = false;
+    reconnectAttemptsRef.current = 0;
+    endSessionRef.current();
+  }, [conversation]);
+
   const endSession = useCallback(async () => {
     if (statusRef.current === "ending" || statusRef.current === "ended") return null;
+    // Set ref synchronously first to prevent re-entrancy from onDisconnect
+    // firing before the React state update propagates
+    statusRef.current = "ending";
     setStatus("ending");
 
     // Stop ElevenLabs conversation

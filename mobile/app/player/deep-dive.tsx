@@ -119,6 +119,15 @@ export default function DeepDiveScreen() {
         </View>
       )}
 
+      {/* Reconnecting indicator */}
+      {status === "reconnecting" && (
+        <View style={styles.warningBanner}>
+          <Text style={styles.warningText}>
+            Connection lost. Reconnecting...
+          </Text>
+        </View>
+      )}
+
       {/* Speaking indicator */}
       {isSpeaking && (
         <View style={styles.speakingIndicator}>
