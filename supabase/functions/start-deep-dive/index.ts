@@ -122,6 +122,13 @@ serve(async (req) => {
       .single();
 
     if (sessionError) {
+      // Unique violation — another active session already exists for this user
+      if (sessionError.code === "23505") {
+        return new Response(
+          JSON.stringify({ error: "You already have an active deep dive session" }),
+          { status: 409, headers: { "Content-Type": "application/json", ...CORS_HEADERS } },
+        );
+      }
       return new Response(
         JSON.stringify({ error: "Failed to create session" }),
         { status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } },
