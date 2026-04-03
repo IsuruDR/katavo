@@ -33,6 +33,8 @@ export default function Sources() {
 
   useEffect(() => { fetchSources(); }, [fetchSources]);
 
+  if (loading) return <LoadingOverlay message="Loading sources..." />;
+
   if (subscription?.tier !== "pro") {
     return (
       <View style={styles.locked}>
@@ -56,8 +58,6 @@ export default function Sources() {
     setNewUrl("");
     fetchSources();
   };
-
-  if (loading) return <LoadingOverlay message="Loading sources..." />;
 
   return (
     <View style={styles.container}>
