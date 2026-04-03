@@ -7,6 +7,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const EXPO_ACCESS_TOKEN = Deno.env.get("EXPO_ACCESS_TOKEN")!;
 
 serve(async (req) => {
+  const authHeader = req.headers.get("Authorization");
+  if (authHeader !== `Bearer ${Deno.env.get("PIPELINE_CALLBACK_SECRET")}`) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   try {
     const { podcast_id, status, error_message } = await req.json();
 
