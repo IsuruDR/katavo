@@ -170,6 +170,7 @@ serve(async (req) => {
         const isUpgrade = tierRank[config.tier] > tierRank[current?.tier || "free"];
 
         if (isUpgrade) {
+          // Immediate upgrade — apply new tier's config right away
           await serviceClient
             .from("subscriptions")
             .update({
@@ -180,6 +181,17 @@ serve(async (req) => {
               deep_dive_minutes_remaining: config.deepDiveMinutes,
             })
             .eq("user_id", userId);
+        } else {
+          // Downgrade takes effect at next renewal (handled by RENEWAL event).
+          // No immediate action needed — the user keeps their current tier
+          // until the billing period ends. When RevenueCat fires the RENEWAL
+          // event at period end, the INITIAL_PURCHASE/RENEWAL handler above
+          // will apply the new (lower) tier's config automatically.
+          console.log(
+            `PRODUCT_CHANGE downgrade pending for user ${userId}: ` +
+            `current=${current?.tier || "free"} -> new=${config.tier}. ` +
+            `Will apply at next renewal.`
+          );
         }
         break;
       }
