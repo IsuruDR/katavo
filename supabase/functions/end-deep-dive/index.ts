@@ -134,27 +134,68 @@ serve(async (req) => {
       })
       .eq("id", sessionId);
 
-    // Deduct minutes (clamped to 0)
-    const { data: updatedSub } = await serviceClient
+    // Deduct minutes with optimistic concurrency check
+    const { data: currentSub } = await serviceClient
       .from("subscriptions")
       .select("deep_dive_minutes_remaining")
       .eq("user_id", user.id)
       .single();
 
-    const currentMinutes = updatedSub?.deep_dive_minutes_remaining ?? 0;
+    const currentMinutes = currentSub?.deep_dive_minutes_remaining ?? 0;
     const newMinutes = Math.max(0, currentMinutes - minutesUsed);
 
-    await serviceClient
+    // Optimistic concurrency: only update if deep_dive_minutes_remaining hasn't changed
+    const { data: updatedSub, error: deductError } = await serviceClient
       .from("subscriptions")
       .update({ deep_dive_minutes_remaining: newMinutes })
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .eq("deep_dive_minutes_remaining", currentMinutes)
+      .select("deep_dive_minutes_remaining")
+      .single();
+
+    if (deductError || !updatedSub) {
+      // Concurrent modification detected — re-read and retry once
+      const { data: retrySub } = await serviceClient
+        .from("subscriptions")
+        .select("deep_dive_minutes_remaining")
+        .eq("user_id", user.id)
+        .single();
+
+      const retryMinutes = retrySub?.deep_dive_minutes_remaining ?? 0;
+      const retryNewMinutes = Math.max(0, retryMinutes - minutesUsed);
+
+      const { data: retryUpdated, error: retryError } = await serviceClient
+        .from("subscriptions")
+        .update({ deep_dive_minutes_remaining: retryNewMinutes })
+        .eq("user_id", user.id)
+        .eq("deep_dive_minutes_remaining", retryMinutes)
+        .select("deep_dive_minutes_remaining")
+        .single();
+
+      if (retryError || !retryUpdated) {
+        return new Response(
+          JSON.stringify({ error: "Failed to deduct minutes due to concurrent update. Please try again." }),
+          { status: 409, headers: { "Content-Type": "application/json", ...CORS_HEADERS } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          durationSeconds,
+          minutesUsed,
+          estimatedCost,
+          deepDiveMinutesRemaining: retryUpdated.deep_dive_minutes_remaining,
+        }),
+        { headers: { "Content-Type": "application/json", ...CORS_HEADERS } },
+      );
+    }
 
     return new Response(
       JSON.stringify({
         durationSeconds,
         minutesUsed,
         estimatedCost,
-        deepDiveMinutesRemaining: newMinutes,
+        deepDiveMinutesRemaining: updatedSub.deep_dive_minutes_remaining,
       }),
       { headers: { "Content-Type": "application/json", ...CORS_HEADERS } },
     );

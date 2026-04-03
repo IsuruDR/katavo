@@ -104,7 +104,7 @@ serve(async (req) => {
         const creditAmount = creditTiers[product_id];
         if (!creditAmount) break;
 
-        // Add credit to subscription
+        // Atomic credit addition with optimistic concurrency check
         const { data: sub } = await serviceClient
           .from("subscriptions")
           .select("credits_remaining")
@@ -112,10 +112,30 @@ serve(async (req) => {
           .single();
 
         if (sub) {
-          await serviceClient
+          const { data: updatedSub, error: creditError } = await serviceClient
             .from("subscriptions")
             .update({ credits_remaining: sub.credits_remaining + creditAmount })
-            .eq("user_id", userId);
+            .eq("user_id", userId)
+            .eq("credits_remaining", sub.credits_remaining)
+            .select("credits_remaining")
+            .single();
+
+          if (creditError || !updatedSub) {
+            // Retry once on concurrent modification
+            const { data: retrySub } = await serviceClient
+              .from("subscriptions")
+              .select("credits_remaining")
+              .eq("user_id", userId)
+              .single();
+
+            if (retrySub) {
+              await serviceClient
+                .from("subscriptions")
+                .update({ credits_remaining: retrySub.credits_remaining + creditAmount })
+                .eq("user_id", userId)
+                .eq("credits_remaining", retrySub.credits_remaining);
+            }
+          }
 
           // Record transaction
           const priceMap: Record<string, number> = {

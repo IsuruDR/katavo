@@ -41,7 +41,7 @@ serve(async (req) => {
       .eq("user_id", user.id)
       .single();
 
-    if (!subscription || subscription.credits_remaining < 1) {
+    if (!subscription) {
       return new Response(
         JSON.stringify({ error: "No credits remaining. Purchase more credits to continue." }),
         { status: 402, headers: { "Content-Type": "application/json" } }
@@ -66,10 +66,21 @@ serve(async (req) => {
 
     const hasAds = subscription.tier === "free";
 
-    await serviceClient
+    // Atomic credit deduction: only succeeds if credits_remaining > 0
+    const { data: updatedSub, error: deductError } = await serviceClient
       .from("subscriptions")
       .update({ credits_remaining: subscription.credits_remaining - 1 })
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .gt("credits_remaining", 0)
+      .select("credits_remaining")
+      .single();
+
+    if (deductError || !updatedSub) {
+      return new Response(
+        JSON.stringify({ error: "No credits remaining. Purchase more credits to continue." }),
+        { status: 402, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     const { data: podcast, error: insertError } = await serviceClient
       .from("podcasts")
