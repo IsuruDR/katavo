@@ -4,7 +4,11 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+let cachedClient: SupabaseClient | null = null;
+
 export function getSupabaseClient(): SupabaseClient {
+  if (cachedClient) return cachedClient;
+
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -12,5 +16,6 @@ export function getSupabaseClient(): SupabaseClient {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
   }
 
-  return createClient(url, key);
+  cachedClient = createClient(url, key);
+  return cachedClient;
 }

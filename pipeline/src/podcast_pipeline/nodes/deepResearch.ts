@@ -108,10 +108,15 @@ export async function deepResearch(
   const iterations = state.researchIterations ?? 0;
   const credibilityReport = state.credibilityReport ?? "";
 
+  // Validate URLs to prevent prompt injection via malformed entries
+  const validUrls = trustedUrls.filter((u) => {
+    try { new URL(u); return true; } catch { return false; }
+  });
+
   // Build prompt with context
   let trustedSourceContext = "";
-  if (trustedUrls.length > 0) {
-    trustedSourceContext = `\nPrioritize information from these sources: ${trustedUrls.join(", ")}`;
+  if (validUrls.length > 0) {
+    trustedSourceContext = `\nPrioritize information from these sources: ${validUrls.join(", ")}`;
   }
 
   let retryContext = "";
