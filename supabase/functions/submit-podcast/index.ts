@@ -160,6 +160,19 @@ serve(async (req) => {
       }),
     });
 
+    if (!lgResponse.ok) {
+      // Mark podcast as failed — DB trigger will refund credit
+      await serviceClient
+        .from("podcasts")
+        .update({ status: "failed", error_message: "Pipeline dispatch failed. Please try again." })
+        .eq("id", podcast.id);
+
+      return new Response(
+        JSON.stringify({ error: "Failed to start podcast generation. Your credit has been refunded." }),
+        { status: 502, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const lgData = await lgResponse.json();
 
     await serviceClient
