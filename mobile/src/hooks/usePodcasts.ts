@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "./useAuth";
 
 /** Raw shape from Supabase (snake_case DB columns) */
-interface PodcastRow {
+export interface PodcastRow {
   id: string;
   topic: string;
   status: string;
@@ -28,7 +28,7 @@ export interface Podcast {
   errorMessage: string | null;
 }
 
-function toPodcast(row: PodcastRow): Podcast {
+export function toPodcast(row: PodcastRow): Podcast {
   return {
     id: row.id,
     topic: row.topic,

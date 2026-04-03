@@ -14,9 +14,9 @@ interface Props {
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   queued: { label: "Queued", color: "#ffd43b" },
   researching: { label: "Researching...", color: "#ffd43b" },
-  factChecking: { label: "Fact-checking...", color: "#ffd43b" },
+  fact_checking: { label: "Fact-checking...", color: "#ffd43b" },
   scripting: { label: "Writing script...", color: "#ffd43b" },
-  generatingAudio: { label: "Generating audio...", color: "#ffd43b" },
+  generating_audio: { label: "Generating audio...", color: "#ffd43b" },
   complete: { label: "Ready", color: "#51cf66" },
   failed: { label: "Failed", color: "#ff6b6b" },
 };

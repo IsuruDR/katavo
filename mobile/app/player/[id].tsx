@@ -19,7 +19,7 @@ import { useSubscription } from "../../src/hooks/useSubscription";
 import { AudioPlayer } from "../../src/components/AudioPlayer";
 import { ChapterMarkers } from "../../src/components/ChapterMarkers";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
-import type { Podcast } from "../../src/hooks/usePodcasts";
+import { toPodcast, type Podcast, type PodcastRow } from "../../src/hooks/usePodcasts";
 
 export default function PlayerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,7 +35,7 @@ export default function PlayerScreen() {
         .select("*")
         .eq("id", id)
         .single();
-      if (data) setPodcast(data as unknown as Podcast);
+      if (data) setPodcast(toPodcast(data as unknown as PodcastRow));
       setLoading(false);
     })();
   }, [id]);
