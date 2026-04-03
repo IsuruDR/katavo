@@ -12,5 +12,4 @@ ALTER TABLE public.podcasts
 
 -- Chapter reference on Q&A sessions
 ALTER TABLE public.qa_sessions
-  ADD COLUMN chapter_title text,
-  ADD COLUMN elevenlabs_session_id text;
+  ADD COLUMN chapter_title text;
