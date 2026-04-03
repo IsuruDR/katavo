@@ -93,6 +93,49 @@ serve(async (req) => {
         break;
       }
 
+      case "NON_RENEWING_PURCHASE": {
+        // Consumable credit purchase
+        const creditTiers: Record<string, number> = {
+          "credit_free_5": 1,
+          "credit_plus_4": 1,
+          "credit_pro_3": 1,
+        };
+
+        const creditAmount = creditTiers[product_id];
+        if (!creditAmount) break;
+
+        // Add credit to subscription
+        const { data: sub } = await serviceClient
+          .from("subscriptions")
+          .select("credits_remaining")
+          .eq("user_id", userId)
+          .single();
+
+        if (sub) {
+          await serviceClient
+            .from("subscriptions")
+            .update({ credits_remaining: sub.credits_remaining + creditAmount })
+            .eq("user_id", userId);
+
+          // Record transaction
+          const priceMap: Record<string, number> = {
+            "credit_free_5": 5.00,
+            "credit_plus_4": 4.00,
+            "credit_pro_3": 3.00,
+          };
+
+          await serviceClient
+            .from("credit_transactions")
+            .insert({
+              user_id: userId,
+              type: "purchase",
+              amount: creditAmount,
+              price_paid: priceMap[product_id] || 0,
+            });
+        }
+        break;
+      }
+
       case "PRODUCT_CHANGE": {
         const config = TIER_CONFIG[product_id];
         if (!config) break;
