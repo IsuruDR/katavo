@@ -9,13 +9,19 @@ export function usePlayer(podcastId: string, audioUrl: string, title: string) {
   const playbackState = usePlaybackState();
 
   useEffect(() => {
+    if (!podcastId || !audioUrl) return;
+
+    let cancelled = false;
     (async () => {
       await setupPlayer();
       await loadTrack(podcastId, audioUrl, title);
-      setReady(true);
+      if (!cancelled) setReady(true);
     })();
 
-    return () => { TrackPlayer.reset(); };
+    return () => {
+      cancelled = true;
+      TrackPlayer.reset();
+    };
   }, [podcastId, audioUrl, title]);
 
   const play = useCallback(async () => { await TrackPlayer.play(); }, []);

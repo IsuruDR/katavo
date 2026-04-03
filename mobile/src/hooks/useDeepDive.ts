@@ -57,6 +57,11 @@ export function useDeepDive(): UseDeepDiveReturn {
     statusRef.current = status;
   }, [status]);
 
+  // Keep endSession ref in sync to avoid stale closures in timer
+  const endSessionRef = useRef<(() => Promise<{ deepDiveMinutesRemaining: number } | null>)>(
+    () => Promise.resolve(null),
+  );
+
   const conversation = useConversation({
     onConnect: ({ conversationId }) => {
       elevenlabsSessionIdRef.current = conversationId;
@@ -103,7 +108,7 @@ export function useDeepDive(): UseDeepDiveReturn {
         setShowWarning(secondsLeft <= WARNING_THRESHOLD && secondsLeft > 0);
 
         if (secondsLeft <= 0) {
-          endSession();
+          endSessionRef.current();
         }
       }, 1000);
     }
@@ -168,6 +173,9 @@ export function useDeepDive(): UseDeepDiveReturn {
     setStatus("ended");
     return null;
   }, [conversation]);
+
+  // Keep ref in sync so timer never captures a stale endSession
+  endSessionRef.current = endSession;
 
   const startSession = useCallback(
     async (podcastId: string, chapterTitle: string) => {

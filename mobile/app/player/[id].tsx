@@ -113,9 +113,9 @@ export default function PlayerScreen() {
 
       {/* Chapter list (main scrollable area) */}
       <ScrollView style={styles.chapterList} contentContainerStyle={styles.chapterListContent}>
-        {podcast.chapterMarkers.length > 0 && (
+        {(podcast.chapterMarkers ?? []).length > 0 && (
           <ChapterMarkers
-            chapters={podcast.chapterMarkers}
+            chapters={podcast.chapterMarkers ?? []}
             currentPosition={player.progress.position}
             onChapterPress={player.seekTo}
             onDive={isPaidTier ? handleDive : undefined}
