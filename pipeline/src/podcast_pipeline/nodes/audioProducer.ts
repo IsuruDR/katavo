@@ -125,12 +125,16 @@ export async function audioProducer(
   if (uploadError)
     throw new Error(`Failed to upload audio: ${uploadError.message}`);
 
-  const { data } = supabase.storage
+  const { data, error: signedUrlError } = await supabase.storage
     .from("podcast-audio")
-    .getPublicUrl(storagePath);
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 365); // 1 year expiry
+
+  if (signedUrlError || !data?.signedUrl) {
+    throw new Error(`Failed to create signed URL: ${signedUrlError?.message ?? "unknown error"}`);
+  }
 
   return {
-    audioUrl: data.publicUrl,
+    audioUrl: data.signedUrl,
     durationSeconds,
     status: "generating_audio",
   };
