@@ -31,7 +31,10 @@ serve(async (req) => {
       );
     }
 
-    const { topic, clarifying_answers, trusted_source_id } = await req.json();
+    const body = await req.json();
+    const topic = body.topic;
+    const clarifying_answers = body.clarifyingAnswers ?? body.clarifying_answers ?? [];
+    const trusted_source_id = body.trustedSourceId ?? body.trusted_source_id;
 
     const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -149,12 +152,12 @@ serve(async (req) => {
       body: JSON.stringify({
         assistant_id: "podcast_pipeline",
         input: {
-          podcast_id: podcast.id,
-          user_id: user.id,
+          podcastId: podcast.id,
+          userId: user.id,
           topic,
-          clarifying_answers: clarifying_answers || [],
-          has_ads: hasAds,
-          trusted_source_urls: trustedSourceUrls,
+          clarifyingAnswers: clarifying_answers || [],
+          hasAds: hasAds,
+          trustedSourceUrls: trustedSourceUrls,
           tier: subscription.tier,
         },
       }),
