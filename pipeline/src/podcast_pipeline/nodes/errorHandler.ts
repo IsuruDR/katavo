@@ -29,7 +29,10 @@ export async function handlePipelineFailure(
     try {
       await fetch(NOTIFY_COMPLETE_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.PIPELINE_CALLBACK_SECRET ?? ""}`,
+        },
         body: JSON.stringify({
           podcastId,
           status: "failed",
