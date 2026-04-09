@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import "dotenv/config";
 
 import { generateQuestionsRoute } from "./routes/generateQuestions.js";
+import { submitPodcastRoute, setJobManager } from "./routes/submitPodcast.js";
 
 const app = new Hono();
 
@@ -15,9 +16,10 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 
 // Routes
 app.route("/api/generate-questions", generateQuestionsRoute);
+app.route("/api/submit-podcast", submitPodcastRoute);
 
-// TODO: Remaining routes (Tasks 5-8)
-// TODO: Crash recovery (Task 10)
+// TODO: Remaining routes (Tasks 6-8)
+// TODO: Wire job manager + crash recovery (Task 10)
 
 const port = parseInt(process.env.PORT ?? "3000");
 serve({ fetch: app.fetch, port });
