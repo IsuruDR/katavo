@@ -84,3 +84,10 @@ Sources:
 
 export const AD_PRE_ROLL_MARKER = "[AD:PRE_ROLL]";
 export const AD_MID_ROLL_MARKER = "[AD:MID_ROLL]";
+
+// TTS
+export const TTS_VOICE = "coral";
+export const TTS_VOICE_INSTRUCTIONS = `Speak like an engaging podcast host.
+Use a warm, conversational tone — as if explaining to a smart friend.
+Vary your pacing naturally. Emphasize key points.
+Pause briefly at chapter transitions.`;
