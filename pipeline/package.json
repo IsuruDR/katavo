@@ -11,12 +11,13 @@
     "dev": "tsx watch src/podcast_pipeline/graph.ts"
   },
   "dependencies": {
-    "@google-cloud/text-to-speech": "^6.4.0",
     "@langchain/core": "^0.3.0",
     "@langchain/langgraph": "^0.2.0",
     "@langchain/openai": "^0.3.0",
+    "@langfuse/langchain": "^5.1.0",
     "@supabase/supabase-js": "^2.0.0",
     "dotenv": "^16.4.0",
+    "langfuse": "^3.38.20",
     "openai": "^6.33.0"
   },
   "devDependencies": {
