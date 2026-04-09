@@ -5,6 +5,7 @@ import "dotenv/config";
 
 import { generateQuestionsRoute } from "./routes/generateQuestions.js";
 import { submitPodcastRoute, setJobManager } from "./routes/submitPodcast.js";
+import { notifyCompleteRoute } from "./routes/notifyComplete.js";
 
 const app = new Hono();
 
@@ -17,8 +18,9 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 // Routes
 app.route("/api/generate-questions", generateQuestionsRoute);
 app.route("/api/submit-podcast", submitPodcastRoute);
+app.route("/api/notify-complete", notifyCompleteRoute);
 
-// TODO: Remaining routes (Tasks 6-8)
+// TODO: Remaining routes (Tasks 7-8)
 // TODO: Wire job manager + crash recovery (Task 10)
 
 const port = parseInt(process.env.PORT ?? "3000");
