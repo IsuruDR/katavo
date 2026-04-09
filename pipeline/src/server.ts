@@ -9,6 +9,7 @@ import { notifyCompleteRoute } from "./routes/notifyComplete.js";
 import { revenuecatWebhookRoute } from "./routes/revenuecatWebhook.js";
 import { startDeepDiveRoute } from "./routes/startDeepDive.js";
 import { endDeepDiveRoute } from "./routes/endDeepDive.js";
+import { createJobManager } from "./jobs/jobManager.js";
 
 const app = new Hono();
 
@@ -26,7 +27,22 @@ app.route("/api/revenucat-webhook", revenuecatWebhookRoute);
 app.route("/api/start-deep-dive", startDeepDiveRoute);
 app.route("/api/end-deep-dive", endDeepDiveRoute);
 
-// TODO: Wire job manager + crash recovery (Task 10)
+// Job manager — in-process pipeline execution with retry + backoff
+const jobManager = createJobManager();
+setJobManager(jobManager);
+
+// Crash recovery — re-enqueue stuck podcasts after a short startup delay
+const RECOVERY_DELAY_MS = 5_000;
+setTimeout(async () => {
+  try {
+    const recovered = await jobManager.recoverStuckJobs();
+    if (recovered > 0) {
+      console.log(`Crash recovery: re-enqueued ${recovered} stuck job(s)`);
+    }
+  } catch (err) {
+    console.error("Crash recovery failed:", err);
+  }
+}, RECOVERY_DELAY_MS);
 
 const port = parseInt(process.env.PORT ?? "3000");
 serve({ fetch: app.fetch, port });
