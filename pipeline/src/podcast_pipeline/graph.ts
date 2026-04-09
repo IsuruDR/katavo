@@ -57,15 +57,25 @@ const workflow = new StateGraph(PipelineState)
 
 export const graph = workflow.compile();
 
-export async function runPipeline(input: Partial<PipelineStateType>): Promise<PipelineStateType> {
+export interface RunPipelineOptions {
+  /** When true, skip handlePipelineFailure on error — let the caller (job manager) handle retries. */
+  isRetryable?: boolean;
+}
+
+export async function runPipeline(
+  input: Partial<PipelineStateType>,
+  options: RunPipelineOptions = {},
+): Promise<PipelineStateType> {
   const state = makeInitialState(input);
   try {
     const callbacks = [getLangfuseCallbackHandler()];
     return await graph.invoke(state, { callbacks });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (state.podcastId) {
-      await handlePipelineFailure(state.podcastId, message);
+    if (!options.isRetryable) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (state.podcastId) {
+        await handlePipelineFailure(state.podcastId, message);
+      }
     }
     throw error;
   }

@@ -3,8 +3,7 @@
  */
 
 import { getSupabaseClient } from "../providers/supabaseClient.js";
-
-const NOTIFY_COMPLETE_URL = process.env.NOTIFY_COMPLETE_URL ?? "";
+import { sendPodcastNotification } from "../../routes/notifyComplete.js";
 
 export async function handlePipelineFailure(
   podcastId: string,
@@ -25,23 +24,10 @@ export async function handlePipelineFailure(
     );
   }
 
-  if (NOTIFY_COMPLETE_URL) {
-    try {
-      await fetch(NOTIFY_COMPLETE_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.PIPELINE_CALLBACK_SECRET ?? ""}`,
-        },
-        body: JSON.stringify({
-          podcastId,
-          status: "failed",
-          errorMessage,
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch {
-      // Non-critical
-    }
+  // Send push notification (direct in-process call, no HTTP overhead)
+  try {
+    await sendPodcastNotification(podcastId, "failed", errorMessage);
+  } catch {
+    // Non-critical — notification failure should not prevent error handling
   }
 }

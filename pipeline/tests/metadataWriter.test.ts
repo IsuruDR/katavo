@@ -14,9 +14,10 @@ vi.mock("../src/podcast_pipeline/providers/supabaseClient.js", () => ({
   }),
 }));
 
-// Mock global fetch for notification
-globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
-
+// Mock sendPodcastNotification (direct in-process call, no HTTP fetch)
+vi.mock("../src/routes/notifyComplete.js", () => ({
+  sendPodcastNotification: vi.fn().mockResolvedValue(undefined),
+}));
 import {
   metadataWriter,
   extractChapters,

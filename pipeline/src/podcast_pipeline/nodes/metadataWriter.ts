@@ -3,9 +3,8 @@
  */
 
 import { getSupabaseClient } from "../providers/supabaseClient.js";
+import { sendPodcastNotification } from "../../routes/notifyComplete.js";
 import type { PipelineStateType } from "../state.js";
-
-const NOTIFY_COMPLETE_URL = process.env.NOTIFY_COMPLETE_URL ?? "";
 
 interface ChapterMarker {
   timestampSeconds: number;
@@ -81,24 +80,11 @@ export async function metadataWriter(
       `Failed to insert research context: ${insertError.message}`,
     );
 
-  // Send push notification
-  if (NOTIFY_COMPLETE_URL) {
-    try {
-      await fetch(NOTIFY_COMPLETE_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.PIPELINE_CALLBACK_SECRET ?? ""}`,
-        },
-        body: JSON.stringify({
-          podcastId,
-          status: "complete",
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch {
-      // Non-critical
-    }
+  // Send push notification (direct in-process call, no HTTP overhead)
+  try {
+    await sendPodcastNotification(podcastId, "complete");
+  } catch {
+    // Non-critical — notification failure should not fail the pipeline
   }
 
   return {
