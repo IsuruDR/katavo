@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("../src/podcast_pipeline/providers/ttsGoogle.js", () => ({
-  GoogleWaveNetTTS: vi.fn().mockImplementation(() => ({
+vi.mock("../src/podcast_pipeline/providers/ttsOpenai.js", () => ({
+  OpenAITTS: vi.fn().mockImplementation(() => ({
     synthesize: vi.fn().mockResolvedValue(Buffer.from("fake-audio-mp3-bytes")),
   })),
 }));
