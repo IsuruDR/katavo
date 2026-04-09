@@ -1,2 +1,2 @@
 export type { TTSProvider } from "./ttsBase.js";
-export { GoogleWaveNetTTS } from "./ttsGoogle.js";
+export { OpenAITTS } from "./ttsOpenai.js";

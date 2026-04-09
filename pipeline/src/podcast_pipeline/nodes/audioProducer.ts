@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AD_PRE_ROLL_MARKER, AD_MID_ROLL_MARKER } from "../config.js";
 import type { TTSProvider } from "../providers/ttsBase.js";
-import { GoogleWaveNetTTS } from "../providers/ttsGoogle.js";
+import { OpenAITTS } from "../providers/ttsOpenai.js";
 import { getSupabaseClient } from "../providers/supabaseClient.js";
 import type { PipelineStateType } from "../state.js";
 
@@ -22,7 +22,7 @@ interface ScriptSegment {
 }
 
 function getTtsProvider(): TTSProvider {
-  return new GoogleWaveNetTTS();
+  return new OpenAITTS();
 }
 
 export function splitScriptSegments(script: string): ScriptSegment[] {
