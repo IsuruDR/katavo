@@ -3,11 +3,9 @@
  * Also extracts a chapter-to-research mapping from the LLM output.
  */
 
-import OpenAI from "openai";
+import { getObservedOpenAI } from "../providers/langfuseClient.js";
 import { SCRIPT_WRITER_PROMPT, TARGET_WORD_COUNT } from "../config.js";
 import type { PipelineStateType, ChapterResearchMap, ChapterResearchEntry } from "../state.js";
-
-const openai = new OpenAI();
 
 /**
  * Parse the chapter_research_map fenced JSON block from the LLM output.
@@ -51,6 +49,7 @@ export function parseChapterResearchMap(
 export async function scriptWriter(
   state: PipelineStateType,
 ): Promise<Partial<PipelineStateType>> {
+  const openai = getObservedOpenAI();
   const { researchDocument, sources = [], needsDisclaimer = false } = state;
 
   let disclaimerContext = "";

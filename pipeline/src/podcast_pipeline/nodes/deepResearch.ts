@@ -3,7 +3,7 @@
  * Replaces the old researchPlanner + deepResearcher + factChecker chain.
  */
 
-import OpenAI from "openai";
+import { getObservedOpenAI } from "../providers/langfuseClient.js";
 import {
   DEEP_RESEARCH_PROMPT,
   DEEP_RESEARCH_POLL_INTERVAL,
@@ -11,8 +11,6 @@ import {
   MAX_TOOL_CALLS,
 } from "../config.js";
 import type { PipelineStateType } from "../state.js";
-
-const openai = new OpenAI();
 
 interface DeepResearchOptions {
   timeoutMs?: number;
@@ -99,6 +97,7 @@ export async function deepResearch(
   state: PipelineStateType,
   options?: DeepResearchOptions,
 ): Promise<Partial<PipelineStateType>> {
+  const openai = getObservedOpenAI();
   const timeoutMs = options?.timeoutMs ?? DEEP_RESEARCH_TIMEOUT;
   const pollIntervalMs = options?.pollIntervalMs ?? DEEP_RESEARCH_POLL_INTERVAL;
 
