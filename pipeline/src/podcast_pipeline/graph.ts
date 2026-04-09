@@ -16,6 +16,7 @@ import { adInjector } from "./nodes/adInjector.js";
 import { audioProducer } from "./nodes/audioProducer.js";
 import { metadataWriter } from "./nodes/metadataWriter.js";
 import { handlePipelineFailure } from "./nodes/errorHandler.js";
+import { getLangfuseCallbackHandler } from "./providers/langfuseClient.js";
 
 function routeAfterQualityGate(state: PipelineStateType): string {
   if (state.shouldRetry) {
@@ -59,7 +60,8 @@ export const graph = workflow.compile();
 export async function runPipeline(input: Partial<PipelineStateType>): Promise<PipelineStateType> {
   const state = makeInitialState(input);
   try {
-    return await graph.invoke(state);
+    const callbacks = [getLangfuseCallbackHandler()];
+    return await graph.invoke(state, { callbacks });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     if (state.podcastId) {
