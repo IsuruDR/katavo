@@ -3,17 +3,19 @@
  * useDeepDive — manages the Deep Dive voice conversation lifecycle.
  *
  * Responsibilities:
- * - Calls start-deep-dive Edge Function to validate and create session
+ * - Calls start-deep-dive API to validate and create session
  * - Uses @elevenlabs/react-native useConversation hook for voice AI
  * - Manages session state (connecting, active, ending, error)
  * - Client-side minute countdown timer
- * - Calls end-deep-dive Edge Function on session end
+ * - Calls end-deep-dive API on session end
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useConversation } from "@elevenlabs/react-native";
 import { supabase } from "../lib/supabase";
 import { buildAgentContext, getAgentId } from "../services/elevenlabs";
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 type DeepDiveStatus = "idle" | "connecting" | "active" | "reconnecting" | "ending" | "ended" | "error";
 
@@ -191,20 +193,19 @@ export function useDeepDive(): UseDeepDiveReturn {
       timerRef.current = null;
     }
 
-    // Call end-deep-dive Edge Function
+    // Call end-deep-dive API
     try {
       const {
         data: { session: authSession },
       } = await supabase.auth.getSession();
 
       const response = await fetch(
-        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/end-deep-dive`,
+        `${API_URL}/api/end-deep-dive`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${authSession?.access_token}`,
-            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "",
           },
           body: JSON.stringify({
             sessionId: sessionIdRef.current,
@@ -220,7 +221,7 @@ export function useDeepDive(): UseDeepDiveReturn {
         return { deepDiveMinutesRemaining: data.deepDiveMinutesRemaining };
       }
     } catch {
-      // Session still ends locally even if Edge Function fails
+      // Session still ends locally even if API call fails
     }
 
     setStatus("ended");
@@ -237,19 +238,18 @@ export function useDeepDive(): UseDeepDiveReturn {
       setTranscript([]);
 
       try {
-        // Call start-deep-dive Edge Function
+        // Call start-deep-dive API
         const {
           data: { session: authSession },
         } = await supabase.auth.getSession();
 
         const response = await fetch(
-          `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/start-deep-dive`,
+          `${API_URL}/api/start-deep-dive`,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${authSession?.access_token}`,
-              apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "",
             },
             body: JSON.stringify({ podcastId, chapterTitle }),
           },
