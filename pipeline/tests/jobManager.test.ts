@@ -230,29 +230,98 @@ describe("JobManager", () => {
   });
 
   describe("crash recovery", () => {
-    it("re-enqueues stuck podcasts from DB on startup", async () => {
+    it("re-enqueues stuck podcasts from DB on startup with correct tier", async () => {
       mockRunPipeline.mockImplementation(() => new Promise(() => {})); // never resolves
-      mockSelect.mockReturnValue({
-        not: vi.fn().mockReturnValue({
-          data: [
-            { id: "stuck-1", user_id: "u1", topic: "AI", clarifying_answers: [], has_ads: false },
-            { id: "stuck-2", user_id: "u2", topic: "ML", clarifying_answers: [], has_ads: true },
-          ],
-          error: null,
-        }),
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "podcasts") {
+          return {
+            select: vi.fn().mockReturnValue({
+              not: vi.fn().mockReturnValue({
+                data: [
+                  { id: "stuck-1", user_id: "u1", topic: "AI", clarifying_answers: [], has_ads: false },
+                  { id: "stuck-2", user_id: "u2", topic: "ML", clarifying_answers: [], has_ads: true },
+                ],
+                error: null,
+              }),
+            }),
+          };
+        }
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({
+                data: [
+                  { user_id: "u1", tier: "pro" },
+                  { user_id: "u2", tier: "plus" },
+                ],
+                error: null,
+              }),
+            }),
+          };
+        }
+        return { select: mockSelect };
       });
 
       const count = await jm.recoverStuckJobs();
 
       expect(count).toBe(2);
       expect(mockFrom).toHaveBeenCalledWith("podcasts");
+      expect(mockFrom).toHaveBeenCalledWith("subscriptions");
       expect(jm.getJob("stuck-1")).toBeDefined();
       expect(jm.getJob("stuck-2")).toBeDefined();
     });
 
+    it("defaults to free tier when subscription not found", async () => {
+      mockRunPipeline.mockImplementation(() => new Promise(() => {}));
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "podcasts") {
+          return {
+            select: vi.fn().mockReturnValue({
+              not: vi.fn().mockReturnValue({
+                data: [
+                  { id: "stuck-1", user_id: "u1", topic: "AI", clarifying_answers: [], has_ads: false },
+                ],
+                error: null,
+              }),
+            }),
+          };
+        }
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({
+                data: [],
+                error: null,
+              }),
+            }),
+          };
+        }
+        return { select: mockSelect };
+      });
+
+      const count = await jm.recoverStuckJobs();
+
+      expect(count).toBe(1);
+      expect(jm.getJob("stuck-1")).toBeDefined();
+    });
+
     it("returns 0 when no stuck podcasts exist", async () => {
-      mockSelect.mockReturnValue({
-        not: vi.fn().mockReturnValue({ data: [], error: null }),
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "podcasts") {
+          return {
+            select: vi.fn().mockReturnValue({
+              not: vi.fn().mockReturnValue({ data: [], error: null }),
+            }),
+          };
+        }
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({ data: [], error: null }),
+            }),
+          };
+        }
+        return { select: mockSelect };
       });
 
       const count = await jm.recoverStuckJobs();

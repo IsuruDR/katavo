@@ -155,11 +155,13 @@ route.post("/", userAuth, async (c) => {
         trustedSourceUrls,
         tier: subscription.tier,
       });
-    } catch {
+    } catch (err) {
       // Job already enqueued (deduplication) — this is fine, return success
+      const isDuplicate = err instanceof Error && err.message.includes("already enqueued");
+      if (!isDuplicate) throw err;
     }
 
-    return c.json({ podcast_id: podcast.id, status: "queued" });
+    return c.json({ podcastId: podcast.id, status: "queued" });
   } catch {
     return c.json({ error: "Failed to submit podcast" }, 500);
   }

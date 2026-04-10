@@ -61,6 +61,12 @@ route.post("/", userAuth, async (c) => {
       }),
     });
 
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("OpenAI API error:", response.status, errorBody);
+      return c.json({ error: "Failed to generate questions" }, 500);
+    }
+
     const data = await response.json();
     const content = JSON.parse(data.choices[0].message.content);
     const questions = content.questions || content;

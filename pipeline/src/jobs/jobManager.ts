@@ -78,7 +78,11 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
         if (isFinalAttempt) {
           // Final failure — call handlePipelineFailure, then remove
-          await handlePipelineFailure(job.podcastId, message);
+          try {
+            await handlePipelineFailure(job.podcastId, message);
+          } catch (failErr) {
+            console.error(`handlePipelineFailure failed for ${job.podcastId}:`, failErr);
+          }
           jobs.delete(job.podcastId);
           drainQueue();
         } else {
@@ -129,6 +133,20 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       return 0;
     }
 
+    // Look up tiers for all affected users
+    const userIds = [...new Set(stuckPodcasts.map((p: { user_id: string }) => p.user_id))];
+    const { data: subscriptions } = await supabase
+      .from("subscriptions")
+      .select("user_id, tier")
+      .in("user_id", userIds);
+
+    const tierByUser = new Map<string, string>();
+    if (subscriptions) {
+      for (const sub of subscriptions) {
+        tierByUser.set(sub.user_id, sub.tier);
+      }
+    }
+
     let recovered = 0;
     for (const podcast of stuckPodcasts) {
       if (!jobs.has(podcast.id)) {
@@ -138,6 +156,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
           topic: podcast.topic,
           clarifyingAnswers: podcast.clarifying_answers ?? [],
           hasAds: podcast.has_ads ?? false,
+          tier: tierByUser.get(podcast.user_id) ?? "free",
         });
         recovered++;
       }
