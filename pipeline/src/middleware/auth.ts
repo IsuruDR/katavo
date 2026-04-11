@@ -8,11 +8,11 @@
  */
 
 import { createMiddleware } from "hono/factory";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type User } from "@supabase/supabase-js";
 
 type UserAuthEnv = {
   Variables: {
-    user: { id: string; email?: string; [key: string]: unknown };
+    user: User;
   };
 };
 

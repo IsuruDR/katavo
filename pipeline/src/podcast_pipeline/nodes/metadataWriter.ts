@@ -90,6 +90,6 @@ export async function metadataWriter(
   return {
     status: "complete",
     transcript,
-    chapterMarkers: chapters,
+    chapterMarkers: chapters as unknown as Record<string, unknown>[],
   };
 }

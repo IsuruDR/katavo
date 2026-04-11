@@ -17,6 +17,10 @@ interface DeepResearchOptions {
   pollIntervalMs?: number;
 }
 
+function isDeepResearchOptions(v: unknown): v is DeepResearchOptions {
+  return typeof v === "object" && v !== null && ("timeoutMs" in v || "pollIntervalMs" in v);
+}
+
 interface UrlCitationAnnotation {
   type: "url_citation";
   url: string;
@@ -95,11 +99,12 @@ function computeCredibilityScore(
 
 export async function deepResearch(
   state: PipelineStateType,
-  options?: DeepResearchOptions,
+  configOrOptions?: unknown,
 ): Promise<Partial<PipelineStateType>> {
   const openai = getObservedOpenAI();
-  const timeoutMs = options?.timeoutMs ?? DEEP_RESEARCH_TIMEOUT;
-  const pollIntervalMs = options?.pollIntervalMs ?? DEEP_RESEARCH_POLL_INTERVAL;
+  const opts = isDeepResearchOptions(configOrOptions) ? configOrOptions : undefined;
+  const timeoutMs = opts?.timeoutMs ?? DEEP_RESEARCH_TIMEOUT;
+  const pollIntervalMs = opts?.pollIntervalMs ?? DEEP_RESEARCH_POLL_INTERVAL;
 
   const tier = state.tier ?? "free";
   const maxToolCalls = MAX_TOOL_CALLS[tier] ?? 20;
@@ -128,7 +133,9 @@ export async function deepResearch(
     .replace("{retryContext}", retryContext)
     .replace("{researchBrief}", state.researchBrief);
 
-  let response;
+  // Deep research API supports max_tool_calls but SDK types lag behind
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let response: any;
   try {
     response = await openai.responses.create({
       model: "o4-mini-deep-research",
@@ -136,7 +143,7 @@ export async function deepResearch(
       background: true,
       tools: [{ type: "web_search_preview" }],
       max_tool_calls: maxToolCalls,
-    });
+    } as any);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return {
