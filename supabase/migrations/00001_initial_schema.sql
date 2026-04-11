@@ -1,8 +1,7 @@
 -- 00001_initial_schema.sql
 -- AI Podcast App — initial database schema
 
--- Enable required extensions
-create extension if not exists "uuid-ossp";
+-- gen_random_uuid() is built-in since PostgreSQL 13, no extension needed
 
 -- Enums
 create type subscription_tier as enum ('free', 'plus', 'pro');
@@ -26,7 +25,7 @@ create table public.profiles (
 
 -- Subscriptions
 create table public.subscriptions (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   tier subscription_tier not null default 'free',
   status subscription_status not null default 'active',
@@ -42,7 +41,7 @@ create table public.subscriptions (
 
 -- Credit transactions (ledger)
 create table public.credit_transactions (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   type credit_transaction_type not null,
   amount integer not null, -- positive for additions, negative for deductions
@@ -53,7 +52,7 @@ create table public.credit_transactions (
 
 -- Podcasts
 create table public.podcasts (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   topic text not null,
   clarifying_answers jsonb default '[]',
@@ -76,7 +75,7 @@ alter table public.credit_transactions
 
 -- Research contexts
 create table public.research_contexts (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   podcast_id uuid not null references public.podcasts(id) on delete cascade,
   research_document jsonb not null default '{}',
   sources jsonb not null default '[]',
@@ -88,7 +87,7 @@ create table public.research_contexts (
 
 -- Trusted sources
 create table public.trusted_sources (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   urls jsonb not null default '[]',
@@ -98,7 +97,7 @@ create table public.trusted_sources (
 
 -- QA sessions
 create table public.qa_sessions (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   podcast_id uuid not null references public.podcasts(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
   started_at timestamptz not null default now(),
