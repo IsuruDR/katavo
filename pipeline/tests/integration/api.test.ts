@@ -169,19 +169,81 @@ describe.skipIf(!envReady)("API integration (live deploy)", () => {
     });
 
     it.skipIf(!RUN_FULL_PIPELINE)(
-      "enqueues a real pipeline run (gated, costs ~$1.88)",
+      "runs the full happy path: topic → questions → submit → complete (gated, ~$1.88, ~5-15 min)",
       async () => {
-        const res = await post(
+        const topic = "the rise of espresso machines in early 20th century Italy";
+
+        // 1. User asks for clarifying questions.
+        const qRes = await post("/api/generate-questions", { topic }, authHeader());
+        expect(qRes.status).toBe(200);
+        const { questions } = (await qRes.json()) as { questions: string[] };
+        expect(Array.isArray(questions)).toBe(true);
+        expect(questions.length).toBeGreaterThanOrEqual(2);
+
+        // 2. User answers them. We synthesize plausible answers.
+        const clarifyingAnswers = questions.map((q) => ({
+          q,
+          a: "Cover this thoroughly — keep it accessible to a general audience.",
+        }));
+
+        // 3. User submits the podcast.
+        const sRes = await post(
           "/api/submit-podcast",
-          { topic: "the history of espresso machines", clarifyingAnswers: [] },
+          { topic, clarifyingAnswers },
           authHeader(),
         );
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as { podcastId: string; status: string };
-        expect(body.status).toBe("queued");
-        expect(typeof body.podcastId).toBe("string");
+        expect(sRes.status).toBe(200);
+        const { podcastId } = (await sRes.json()) as { podcastId: string };
+
+        // 4. Poll until terminal. Pipeline goes:
+        //   queued → researching → scripting → generating_audio → complete
+        // (or → failed at any stage.)
+        const TERMINAL = new Set(["complete", "failed"]);
+        const POLL_MS = 15_000;
+        const DEADLINE = Date.now() + 25 * 60 * 1000; // 25 min hard cap
+        const seen: string[] = [];
+        let row: Record<string, unknown> | null = null;
+        while (Date.now() < DEADLINE) {
+          const { data } = await admin
+            .from("podcasts")
+            .select(
+              "id,status,error_message,audio_url,transcript,duration_seconds,chapter_markers,chapter_research_map",
+            )
+            .eq("id", podcastId)
+            .single();
+          row = data;
+          const status = (row?.status as string | undefined) ?? "unknown";
+          if (seen[seen.length - 1] !== status) seen.push(status);
+          if (TERMINAL.has(status)) break;
+          await new Promise((r) => setTimeout(r, POLL_MS));
+        }
+        if (!row) throw new Error("podcast row vanished");
+
+        // 5. Assert terminal state and that all output fields are populated.
+        expect(
+          row.status,
+          `status path: ${seen.join(" -> ")}; error: ${row.error_message ?? ""}`,
+        ).toBe("complete");
+        expect(typeof row.audio_url).toBe("string");
+        expect((row.audio_url as string).length).toBeGreaterThan(0);
+        expect(typeof row.transcript).toBe("string");
+        expect((row.transcript as string).length).toBeGreaterThan(500);
+        expect((row.duration_seconds as number) ?? 0).toBeGreaterThan(60);
+        expect(Array.isArray(row.chapter_markers)).toBe(true);
+        expect((row.chapter_markers as unknown[]).length).toBeGreaterThanOrEqual(2);
+        expect(row.chapter_research_map).toBeTruthy();
+
+        // research_contexts row should exist with sources from the deep research run.
+        const { data: ctx } = await admin
+          .from("research_contexts")
+          .select("research_document, sources, overall_credibility_score")
+          .eq("podcast_id", podcastId)
+          .single();
+        expect(ctx).toBeTruthy();
+        expect(Array.isArray(ctx?.sources)).toBe(true);
+        expect((ctx?.sources as unknown[])?.length ?? 0).toBeGreaterThanOrEqual(1);
       },
-      30_000,
+      30 * 60 * 1000, // 30 min vitest timeout, with the inner 25 min poll cap
     );
   });
 
