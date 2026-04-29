@@ -8,8 +8,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --exclude tests/integration/**",
+    "test:watch": "vitest --exclude tests/integration/**",
+    "test:integration": "vitest run tests/integration"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.13",
