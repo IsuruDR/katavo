@@ -27,6 +27,7 @@ export const PipelineState = Annotation.Root({
   researchBrief: Annotation<string>,
   researchDocument: Annotation<Record<string, unknown>>, // Structured JSONB
   sources: Annotation<Record<string, unknown>[]>, // [{url, title}]
+  rawResearchResponse: Annotation<Record<string, unknown> | null>, // Full Deep Research response (output[], usage, status, ...)
   credibilityScore: Annotation<number | null>,
   credibilityReport: Annotation<string>,
   researchIterations: Annotation<number>,
@@ -66,6 +67,7 @@ export function makeInitialState(overrides: Partial<PipelineStateType>): Pipelin
     researchBrief: "",
     researchDocument: {},
     sources: [],
+    rawResearchResponse: null,
     credibilityScore: null,
     credibilityReport: "",
     researchIterations: 0,

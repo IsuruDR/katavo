@@ -88,6 +88,65 @@ describe("metadataWriter", () => {
     );
   });
 
+  it("should persist rawResearchResponse on the research_contexts row", async () => {
+    vi.clearAllMocks();
+
+    const rawResponse = {
+      id: "resp_xyz",
+      status: "completed",
+      output: [{ type: "message", content: [] }],
+    };
+
+    const state = {
+      podcastId: "test-raw",
+      userId: "user-raw",
+      topic: "raw response test",
+      script: "[CHAPTER: Intro]\nHello",
+      audioUrl: "https://storage/audio.mp3",
+      durationSeconds: 600,
+      researchDocument: { sections: [] },
+      sources: [],
+      rawResearchResponse: rawResponse,
+      credibilityScore: 0.85,
+      researchIterations: 1,
+      chapterResearchMap: null,
+    };
+
+    await metadataWriter(state as any);
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw_response: rawResponse,
+      }),
+    );
+  });
+
+  it("should set raw_response to null when state is missing it", async () => {
+    vi.clearAllMocks();
+
+    const state = {
+      podcastId: "test-no-raw",
+      userId: "user-no-raw",
+      topic: "test",
+      script: "[CHAPTER: Intro]\nHello",
+      audioUrl: "https://storage/audio.mp3",
+      durationSeconds: 600,
+      researchDocument: {},
+      sources: [],
+      credibilityScore: null,
+      researchIterations: 1,
+      chapterResearchMap: null,
+    };
+
+    await metadataWriter(state as any);
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw_response: null,
+      }),
+    );
+  });
+
   it("should set chapter_research_map to null in update when not provided", async () => {
     vi.clearAllMocks();
 

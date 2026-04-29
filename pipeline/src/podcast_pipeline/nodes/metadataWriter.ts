@@ -72,6 +72,7 @@ export async function metadataWriter(
       podcast_id: podcastId,
       research_document: state.researchDocument ?? {},
       sources: state.sources ?? [],
+      raw_response: state.rawResearchResponse ?? null,
       overall_credibility_score: state.credibilityScore,
       research_iterations: state.researchIterations ?? 1,
     });

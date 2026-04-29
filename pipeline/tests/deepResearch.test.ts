@@ -82,6 +82,11 @@ describe("deepResearch", () => {
     expect(result.credibilityScore).toBeGreaterThan(0);
     expect(result.credibilityReport).toContain("3 unique sources");
     expect(result.status).toBe("scripting");
+    // Full response is captured for Deep Dive use cases that need annotation
+    // positions, web_search_call queries, or raw output_text.
+    expect(result.rawResearchResponse).toBeDefined();
+    expect((result.rawResearchResponse as any).id).toBe("resp_abc123");
+    expect((result.rawResearchResponse as any).output).toBeDefined();
 
     // Verify background: true was used
     expect(mockCreate).toHaveBeenCalledWith(

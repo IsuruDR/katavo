@@ -218,6 +218,7 @@ function processCompletedResponse(
   return {
     researchDocument,
     sources,
+    rawResearchResponse: response as Record<string, unknown>,
     credibilityScore,
     credibilityReport,
     status: "scripting",
