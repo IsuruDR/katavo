@@ -1,5 +1,5 @@
 {
-  "name": "mobile",
+  "name": "katavo",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
@@ -9,8 +9,12 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@config-plugins/react-native-webrtc": "^13.0.0",
+    "@config-plugins/react-native-webrtc": "^14.0.0",
     "@elevenlabs/react-native": "^1.0.1",
+    "@expo-google-fonts/ibm-plex-sans": "^0.4.1",
+    "@expo-google-fonts/ibm-plex-serif": "^0.4.1",
+    "@expo/metro-runtime": "55.0.8-canary-20260327-0789fbc",
+    "@expo/vector-icons": "^15.1.1",
     "@livekit/react-native": "^2.10.0",
     "@livekit/react-native-expo-plugin": "^1.0.2",
     "@livekit/react-native-webrtc": "^144.0.0",
@@ -19,17 +23,23 @@
     "@supabase/supabase-js": "^2.100.1",
     "expo": "55.0.10-canary-20260327-0789fbc",
     "expo-constants": "55.0.10-canary-20260327-0789fbc",
+    "expo-dev-client": "^55.0.20-canary-20260327-0789fbc",
     "expo-device": "55.0.11-canary-20260327-0789fbc",
     "expo-linking": "55.0.10-canary-20260327-0789fbc",
     "expo-notifications": "55.0.15-canary-20260327-0789fbc",
     "expo-router": "55.0.9-canary-20260327-0789fbc",
     "expo-status-bar": "55.0.5-canary-20260327-0789fbc",
+    "expo-updates": "^55.0.17-canary-20260327-0789fbc",
     "livekit-client": "^2.18.0",
     "react": "19.2.0",
+    "react-dom": "19.2.0",
     "react-native": "0.83.4",
     "react-native-purchases": "^9.15.1",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
     "react-native-track-player": "^4.1.2",
-    "react-native-url-polyfill": "^3.0.0"
+    "react-native-url-polyfill": "^3.0.0",
+    "react-native-web": "~0.21.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

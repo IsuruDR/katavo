@@ -1,17 +1,17 @@
 // mobile/src/components/ChapterMarkers.tsx
 /**
- * ChapterMarkers — tappable chapter list with timestamps.
- * Highlights the currently playing chapter.
- * Shows "Dive" button on current chapter when onDive callback is provided.
+ * ChapterMarkers — flat list of chapters in editorial style.
  *
- * Props:
- * - chapters: array of {timestampSeconds, title}
- * - currentPosition: current playback position in seconds
- * - onChapterPress: seek to chapter timestamp
- * - onDive: optional — callback for Dive button (only shown on current chapter)
- * - diveEnabled: optional — whether Dive button is interactive (false = dimmed)
+ * Each chapter is a row, not a card: timestamp left, title middle. Past
+ * chapters dim to 0.4. Current chapter gets accent timestamp, weight-600
+ * title, and a hairline-green "NOW PLAYING" eyebrow.
+ *
+ * The Dive action lives on the persistent DiveBar in the player layout,
+ * not inside the row. That keeps the chapter list pure-content and lets
+ * Dive feel like a confident second-to-play CTA.
  */
-import { View, Text, TouchableOpacity, StyleSheet, FlatList } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { color, font, space } from "../theme/tokens";
 
 interface Chapter {
   timestampSeconds: number;
@@ -22,113 +22,103 @@ interface Props {
   chapters: Chapter[];
   currentPosition: number;
   onChapterPress: (seconds: number) => void;
-  onDive?: (chapterTitle: string) => void;
-  diveEnabled?: boolean;
+}
+
+function formatTime(seconds: number | undefined | null): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+    return "—";
+  }
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 export function ChapterMarkers({
   chapters,
   currentPosition,
   onChapterPress,
-  onDive,
-  diveEnabled = true,
 }: Props) {
   const currentChapterIndex = chapters.reduce((acc, ch, i) => {
     if (currentPosition >= ch.timestampSeconds) return i;
     return acc;
   }, 0);
 
-  const formatTime = (s: number) => {
-    const mins = Math.floor(s / 60);
-    const secs = Math.floor(s % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  const isPast = (index: number) => index < currentChapterIndex;
-  const isCurrent = (index: number) => index === currentChapterIndex;
-
   return (
-    <FlatList
-      data={chapters}
-      keyExtractor={(_, i) => i.toString()}
-      scrollEnabled={false}
-      renderItem={({ item, index }) => (
-        <TouchableOpacity
-          style={[
-            styles.chapter,
-            isCurrent(index) && styles.currentChapter,
-            isPast(index) && styles.pastChapter,
-          ]}
-          onPress={() => onChapterPress(item.timestampSeconds)}
-        >
-          <View style={styles.chapterContent}>
-            <Text style={styles.timestamp}>{formatTime(item.timestampSeconds)}</Text>
-            <View style={styles.titleContainer}>
-              <Text
-                style={[
-                  styles.title,
-                  isCurrent(index) && styles.currentText,
-                  isPast(index) && styles.pastText,
-                ]}
-              >
+    <View>
+      {chapters.map((item, index) => {
+        const past = index < currentChapterIndex;
+        const current = index === currentChapterIndex;
+
+        return (
+          <TouchableOpacity
+            key={`${index}-${item.timestampSeconds}`}
+            style={[styles.row, past && styles.rowPast]}
+            onPress={() => onChapterPress(item.timestampSeconds)}
+            activeOpacity={0.55}
+            accessibilityRole="button"
+            accessibilityLabel={`Chapter ${index + 1}: ${item.title}, ${formatTime(item.timestampSeconds)}`}
+          >
+            <Text style={[styles.timestamp, current && styles.timestampCurrent]}>
+              {formatTime(item.timestampSeconds)}
+            </Text>
+            <View style={styles.body}>
+              <Text style={current ? styles.titleCurrent : styles.title}>
                 {item.title}
               </Text>
-              {isCurrent(index) && (
-                <Text style={styles.nowPlaying}>Now playing</Text>
-              )}
+              {current && <Text style={styles.nowPlaying}>Now playing</Text>}
             </View>
-          </View>
-          {isCurrent(index) && onDive && (
-            <TouchableOpacity
-              style={[styles.diveButton, !diveEnabled && styles.diveButtonDisabled]}
-              onPress={() => diveEnabled && onDive(item.title)}
-              disabled={!diveEnabled}
-            >
-              <Text
-                style={[
-                  styles.diveText,
-                  !diveEnabled && styles.diveTextDisabled,
-                ]}
-              >
-                Dive
-              </Text>
-            </TouchableOpacity>
-          )}
-        </TouchableOpacity>
-      )}
-    />
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  chapter: {
+  row: {
     flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
+    alignItems: "flex-start",
+    paddingVertical: space.md,
+    gap: space.base,
   },
-  currentChapter: {
-    backgroundColor: "#6366f110",
-    borderLeftWidth: 3,
-    borderLeftColor: "#6366f1",
+  rowPast: {
+    opacity: 0.4,
   },
-  pastChapter: { opacity: 0.5 },
-  chapterContent: { flexDirection: "row", flex: 1, gap: 12 },
-  timestamp: { color: "#888", fontSize: 14, width: 50 },
-  titleContainer: { flex: 1 },
-  title: { color: "#fff", fontSize: 15 },
-  currentText: { color: "#6366f1", fontWeight: "600" },
-  pastText: { color: "#666" },
-  nowPlaying: { color: "#6366f1", fontSize: 11, marginTop: 2 },
-  diveButton: {
-    backgroundColor: "#6366f1",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+  timestamp: {
+    fontFamily: font.sansMedium,
+    fontSize: 13,
+    color: color.inkSecondary,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: 0.2,
+    width: 46,
+    paddingTop: 2,
   },
-  diveButtonDisabled: { backgroundColor: "#333" },
-  diveText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  diveTextDisabled: { color: "#666" },
+  timestampCurrent: {
+    color: color.accent,
+    fontFamily: font.sansSemiBold,
+  },
+  body: {
+    flex: 1,
+    gap: space.xxs,
+  },
+  title: {
+    fontFamily: font.serifMedium,
+    fontSize: 17,
+    lineHeight: 24,
+    color: color.ink,
+  },
+  titleCurrent: {
+    fontFamily: font.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 24,
+    color: color.ink,
+  },
+  nowPlaying: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: color.accent,
+    marginTop: space.xxs,
+  },
 });

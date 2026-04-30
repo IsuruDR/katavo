@@ -1,13 +1,24 @@
 // mobile/src/components/AudioPlayer.tsx
 /**
- * AudioPlayer — play/pause button, seek bar, time display.
- * Props:
- *   - isPlaying: boolean
- *   - progress: { position, duration }
- *   - onPlay, onPause, onSeek
+ * AudioPlayer — bottom-anchored transport dock.
+ *
+ * Three controls only: scrubber + time, then a transport row of −10, play,
+ * +10. Editorial type for skip labels, ink-stamp green play circle with
+ * paper arrow. Each control gives visual press feedback (scale + color
+ * flash on skips). Disabled but visible when the action is out of bounds
+ * (skip past 0 or duration).
  */
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { useRef } from "react";
+import {
+  Animated,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import Slider from "@react-native-community/slider";
+import { Feather } from "@expo/vector-icons";
+import { color, font, layout, motion, space } from "../theme/tokens";
 
 interface Props {
   isPlaying: boolean;
@@ -16,15 +27,30 @@ interface Props {
   onPlay: () => void;
   onPause: () => void;
   onSeek: (seconds: number) => void;
+  onSkipBack: () => void;
+  onSkipForward: () => void;
 }
 
 function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-export function AudioPlayer({ isPlaying, position, duration, onPlay, onPause, onSeek }: Props) {
+export function AudioPlayer({
+  isPlaying,
+  position,
+  duration,
+  onPlay,
+  onPause,
+  onSeek,
+  onSkipBack,
+  onSkipForward,
+}: Props) {
+  const skipBackDisabled = position < 10;
+  const skipForwardDisabled = duration > 0 && position + 10 > duration;
+
   return (
     <View style={styles.container}>
       <Slider
@@ -33,29 +59,197 @@ export function AudioPlayer({ isPlaying, position, duration, onPlay, onPause, on
         maximumValue={duration || 1}
         value={position}
         onSlidingComplete={onSeek}
-        minimumTrackTintColor="#6366f1"
-        maximumTrackTintColor="#333"
-        thumbTintColor="#6366f1"
+        minimumTrackTintColor={color.accent}
+        maximumTrackTintColor={color.hairlineStrong}
+        thumbTintColor={color.accent}
       />
       <View style={styles.timeRow}>
         <Text style={styles.time}>{formatTime(position)}</Text>
         <Text style={styles.time}>{formatTime(duration)}</Text>
       </View>
-      <TouchableOpacity style={styles.playButton} onPress={isPlaying ? onPause : onPlay}>
-        <Text style={styles.playIcon}>{isPlaying ? "||" : ">"}</Text>
-      </TouchableOpacity>
+
+      <View style={styles.transport}>
+        <SkipButton
+          label="−10"
+          disabled={skipBackDisabled}
+          onPress={onSkipBack}
+          accessibilityLabel="Skip back ten seconds"
+        />
+        <PlayButton
+          isPlaying={isPlaying}
+          onPress={isPlaying ? onPause : onPlay}
+        />
+        <SkipButton
+          label="+10"
+          disabled={skipForwardDisabled}
+          onPress={onSkipForward}
+          accessibilityLabel="Skip forward ten seconds"
+        />
+      </View>
     </View>
   );
 }
 
+interface SkipProps {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+}
+
+/**
+ * Scale runs on the outer Animated.View (native driver). Color flash runs
+ * on the inner Animated.Text (JS driver, since color isn't native-eligible).
+ * Splitting into two nodes is what avoids the "node moved to native" crash.
+ */
+function SkipButton({ label, disabled, onPress, accessibilityLabel }: SkipProps) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const flash = useRef(new Animated.Value(0)).current;
+
+  const handlePress = () => {
+    if (disabled) return;
+    Animated.sequence([
+      Animated.timing(scale, {
+        toValue: 0.84,
+        duration: motion.fast,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scale, {
+        toValue: 1,
+        duration: motion.base,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    Animated.sequence([
+      Animated.timing(flash, {
+        toValue: 1,
+        duration: motion.fast,
+        useNativeDriver: false,
+      }),
+      Animated.timing(flash, {
+        toValue: 0,
+        duration: motion.slow,
+        useNativeDriver: false,
+      }),
+    ]).start();
+    onPress();
+  };
+
+  const animatedColor = flash.interpolate({
+    inputRange: [0, 1],
+    outputRange: [color.ink, color.accent],
+  });
+
+  return (
+    <Pressable
+      hitSlop={layout.hitSlop}
+      onPress={handlePress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+    >
+      <Animated.View
+        style={{
+          transform: [{ scale }],
+          opacity: disabled ? 0.3 : 1,
+        }}
+      >
+        <Animated.Text style={[styles.skipLabel, { color: animatedColor }]}>
+          {label}
+        </Animated.Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+interface PlayProps {
+  isPlaying: boolean;
+  onPress: () => void;
+}
+
+function PlayButton({ isPlaying, onPress }: PlayProps) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePress = () => {
+    Animated.sequence([
+      Animated.timing(scale, {
+        toValue: 0.92,
+        duration: motion.fast,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scale, {
+        toValue: 1,
+        duration: motion.base,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    onPress();
+  };
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={isPlaying ? "Pause" : "Play"}
+    >
+      <Animated.View style={[styles.playButton, { transform: [{ scale }] }]}>
+        <Feather
+          name={isPlaying ? "pause" : "play"}
+          size={26}
+          color={color.paper}
+          style={isPlaying ? undefined : styles.playIconOptical}
+        />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { alignItems: "center", padding: 24 },
-  slider: { width: "100%", height: 40 },
-  timeRow: { flexDirection: "row", justifyContent: "space-between", width: "100%" },
-  time: { color: "#888", fontSize: 13 },
-  playButton: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: "#6366f1",
-    justifyContent: "center", alignItems: "center", marginTop: 16,
+  container: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.md,
+    paddingBottom: space.lg,
+    gap: space.sm,
   },
-  playIcon: { color: "#fff", fontSize: 28, fontWeight: "700" },
+  slider: {
+    width: "100%",
+    height: 32,
+  },
+  timeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: space.xs,
+  },
+  time: {
+    fontFamily: font.sansMedium,
+    fontSize: 12,
+    color: color.inkSecondary,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: 0.2,
+  },
+  transport: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: space.xxl,
+    marginTop: space.sm,
+  },
+  skipLabel: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 22,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.2,
+  },
+  playButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: color.accent,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  playIconOptical: {
+    marginLeft: 2,
+  },
 });

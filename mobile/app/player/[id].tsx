@@ -1,25 +1,36 @@
 // mobile/app/player/[id].tsx
 /**
- * Player screen — chapter-focused layout with compact bottom controls.
- * Shows "Dive" button on current chapter for paid users with minutes remaining.
+ * Player — paper-light editorial chapter list above an anchored audio dock,
+ * with the persistent DiveBar between them.
+ *
+ * Three things visible: minimal header (back link + minutes badge), the topic
+ * as the page title, and the chapter list as the dominant content. The Dive
+ * bar lives just above the audio dock so it reads as a deliberate second
+ * action after play. The dock owns audio transport only.
  */
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  Pressable,
   ScrollView,
-  TouchableOpacity,
-  Alert,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "../../src/lib/supabase";
 import { usePlayer } from "../../src/hooks/usePlayer";
 import { useSubscription } from "../../src/hooks/useSubscription";
 import { AudioPlayer } from "../../src/components/AudioPlayer";
 import { ChapterMarkers } from "../../src/components/ChapterMarkers";
+import { DiveBar } from "../../src/components/DiveBar";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
-import { toPodcast, type Podcast, type PodcastRow } from "../../src/hooks/usePodcasts";
+import {
+  toPodcast,
+  type Podcast,
+  type PodcastRow,
+} from "../../src/hooks/usePodcasts";
+import { color, font, layout, space, text } from "../../src/theme/tokens";
 
 export default function PlayerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -47,85 +58,101 @@ export default function PlayerScreen() {
   );
 
   const isPaidTier =
-    !!subscription && (subscription.tier === "plus" || subscription.tier === "pro");
+    !!subscription &&
+    (subscription.tier === "plus" || subscription.tier === "pro");
   const hasMinutes =
     isPaidTier && subscription!.deepDiveMinutesRemaining > 0;
+  const diveLocked = !isPaidTier || !hasMinutes;
 
-  const handleDive = useCallback(
-    (chapterTitle: string) => {
-      if (!isPaidTier) {
-        Alert.alert(
-          "Upgrade Required",
-          "Deep Dive requires a Plus or Pro subscription.",
-        );
-        return;
-      }
+  const chapters = podcast?.chapterMarkers ?? [];
 
-      if (!hasMinutes) {
-        const renewalText = subscription?.renewalDate
-          ? `Resets ${new Date(subscription.renewalDate).toLocaleDateString()}.`
-          : "";
-        Alert.alert(
-          "Minutes Used Up",
-          `Deep dive minutes used up. ${renewalText}`,
-        );
-        return;
-      }
+  const currentChapter = useMemo(() => {
+    if (chapters.length === 0) return null;
+    const idx = chapters.reduce((acc, ch, i) => {
+      if (player.progress.position >= ch.timestampSeconds) return i;
+      return acc;
+    }, 0);
+    return chapters[idx] ?? null;
+  }, [chapters, player.progress.position]);
 
-      // Pause playback and navigate to deep dive
-      player.pause();
-      router.push({
-        pathname: "/player/deep-dive",
-        params: {
-          podcastId: podcast!.id,
-          chapterTitle,
-          position: String(Math.floor(player.progress.position)),
-        },
-      });
-    },
-    [isPaidTier, hasMinutes, subscription, player, podcast, router],
+  const handleDive = useCallback(() => {
+    if (!podcast || !currentChapter) return;
+    if (diveLocked) {
+      router.push("/(tabs)/account");
+      return;
+    }
+    player.pause();
+    router.push({
+      pathname: "/player/deep-dive",
+      params: {
+        podcastId: podcast.id,
+        chapterTitle: currentChapter.title,
+        position: String(Math.floor(player.progress.position)),
+      },
+    });
+  }, [diveLocked, player, podcast, currentChapter, router]);
+
+  if (loading || !podcast) return <LoadingOverlay message="Loading podcast" />;
+  if (!player.ready) return <LoadingOverlay message="Preparing audio" />;
+
+  const totalMinutes = Math.max(
+    1,
+    Math.round((podcast.durationSeconds ?? 0) / 60),
   );
 
-  if (loading || !podcast) return <LoadingOverlay message="Loading podcast..." />;
-  if (!player.ready) return <LoadingOverlay message="Preparing audio..." />;
-
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backButton}>Back</Text>
-        </TouchableOpacity>
-        {isPaidTier && (
-          <Text style={styles.minutesBadge}>
-            {subscription.deepDiveMinutesRemaining} min
+    <SafeAreaView
+      style={styles.root}
+      edges={["top", "left", "right", "bottom"]}
+    >
+      <View style={styles.column}>
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={layout.hitSlop}
+            accessibilityRole="button"
+            accessibilityLabel="Back to library"
+          >
+            <Text style={styles.backLabel}>Back</Text>
+          </Pressable>
+          {isPaidTier && (
+            <View style={styles.minutesBadge}>
+              <Text style={styles.minutesText}>
+                {subscription?.deepDiveMinutesRemaining} min
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.titleBlock}>
+          <Text style={styles.topic} numberOfLines={3}>
+            {podcast.topic}
           </Text>
-        )}
-      </View>
+          <Text style={styles.totalDuration}>{totalMinutes} min</Text>
+        </View>
 
-      {/* Title section */}
-      <View style={styles.titleSection}>
-        <Text style={styles.topic}>{podcast.topic}</Text>
-        <Text style={styles.meta}>
-          {Math.ceil((podcast.durationSeconds ?? 0) / 60)} min
-        </Text>
-      </View>
+        <ScrollView
+          style={styles.chapters}
+          contentContainerStyle={styles.chaptersContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {chapters.length > 0 && (
+            <ChapterMarkers
+              chapters={chapters}
+              currentPosition={player.progress.position}
+              onChapterPress={player.seekTo}
+            />
+          )}
+        </ScrollView>
 
-      {/* Chapter list (main scrollable area) */}
-      <ScrollView style={styles.chapterList} contentContainerStyle={styles.chapterListContent}>
-        {(podcast.chapterMarkers ?? []).length > 0 && (
-          <ChapterMarkers
-            chapters={podcast.chapterMarkers ?? []}
-            currentPosition={player.progress.position}
-            onChapterPress={player.seekTo}
-            onDive={isPaidTier ? handleDive : undefined}
-            diveEnabled={hasMinutes}
+        {currentChapter && (
+          <DiveBar
+            chapterTitle={currentChapter.title}
+            locked={diveLocked}
+            onPress={handleDive}
           />
         )}
-      </ScrollView>
 
-      {/* Compact bottom player */}
-      <View style={styles.bottomPlayer}>
         <AudioPlayer
           isPlaying={player.isPlaying}
           position={player.progress.position}
@@ -133,49 +160,59 @@ export default function PlayerScreen() {
           onPlay={player.play}
           onPause={player.pause}
           onSeek={player.seekTo}
+          onSkipBack={player.skipBack}
+          onSkipForward={player.skipForward}
         />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  root: { flex: 1, backgroundColor: color.paper },
+  column: { flex: 1 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 56,
-    paddingBottom: 8,
+    paddingHorizontal: space.xl,
+    paddingTop: space.sm,
+    paddingBottom: space.base,
   },
-  backButton: { color: "#6366f1", fontSize: 16 },
+  backLabel: {
+    ...text.body,
+    color: color.inkSecondary,
+  },
   minutesBadge: {
-    color: "#6366f1",
-    fontSize: 13,
-    fontWeight: "600",
-    backgroundColor: "#6366f115",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: "hidden",
+    backgroundColor: color.accentSoft,
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+    borderRadius: 999,
   },
-  titleSection: { paddingHorizontal: 16, paddingBottom: 16 },
+  minutesText: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 12,
+    color: color.accent,
+    letterSpacing: 0.3,
+  },
+  titleBlock: {
+    paddingHorizontal: space.xl,
+    paddingBottom: space.lg,
+    gap: space.xs,
+  },
   topic: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#fff",
-    lineHeight: 30,
-    marginBottom: 4,
+    ...text.displaySerif,
+    fontSize: 26,
+    lineHeight: 32,
   },
-  meta: { fontSize: 14, color: "#666" },
-  chapterList: { flex: 1 },
-  chapterListContent: { paddingBottom: 16 },
-  bottomPlayer: {
-    borderTopWidth: 1,
-    borderTopColor: "#1a1a1a",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#0a0a0a",
+  totalDuration: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+  },
+  chapters: { flex: 1 },
+  chaptersContent: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.xs,
+    paddingBottom: space.lg,
   },
 });

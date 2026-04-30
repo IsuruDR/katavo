@@ -1,31 +1,95 @@
 /**
- * LoadingOverlay — full-screen loading indicator.
- * Use for async operations (auth, generation, data fetching).
+ * LoadingOverlay — paper-light typographic loading state.
+ * No spinner. A single ink-secondary line above a breathing hairline.
+ *
  * Props:
- *   - message: string — displayed below spinner
+ *   - message: string. Quiet sentence-case copy ending in ellipsis.
+ *
+ * Reduced motion: hairline opacity stays at 1.0, no animation.
  */
-import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
+import { useEffect, useRef } from "react";
+import {
+  AccessibilityInfo,
+  Animated,
+  Easing,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { color, motion, space, text } from "../theme/tokens";
 
 interface Props {
   message: string;
 }
 
 export function LoadingOverlay({ message }: Props) {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    let cancelled = false;
+    let loop: Animated.CompositeAnimation | null = null;
+
+    AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+      if (cancelled) return;
+      if (reduced) {
+        opacity.setValue(1);
+        return;
+      }
+      loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, {
+            toValue: 1,
+            duration: motion.ambient / 2,
+            easing: Easing.bezier(...motion.easing.inOut),
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 0.4,
+            duration: motion.ambient / 2,
+            easing: Easing.bezier(...motion.easing.inOut),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      loop.start();
+    });
+
+    return () => {
+      cancelled = true;
+      loop?.stop();
+    };
+  }, [opacity]);
+
   return (
-    <View style={styles.overlay}>
-      <ActivityIndicator size="large" color="#6366f1" />
-      <Text style={styles.message}>{message}</Text>
+    <View style={styles.root}>
+      <View style={styles.center}>
+        {message.length > 0 && <Text style={styles.message}>{message}</Text>}
+        <Animated.View style={[styles.hairline, { opacity }]} />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  root: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.85)",
+    backgroundColor: color.paper,
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 100,
   },
-  message: { color: "#fff", fontSize: 16, marginTop: 16 },
+  center: {
+    alignItems: "center",
+    paddingHorizontal: space.xxl,
+  },
+  message: {
+    ...text.body,
+    color: color.inkSecondary,
+    textAlign: "center",
+    marginBottom: space.base,
+  },
+  hairline: {
+    height: 1,
+    width: 56,
+    backgroundColor: color.accent,
+  },
 });

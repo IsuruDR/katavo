@@ -2,17 +2,23 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "./useAuth";
 
-/** Raw shape from Supabase (snake_case DB columns) */
+/** Raw shape from Supabase (snake_case DB columns).
+ *
+ * `chapter_markers` is a JSONB column; the inner JSON is whatever the
+ * pipeline writes — `metadataWriter` writes camelCase `timestampSeconds`,
+ * so we read it back camelCase. The DB column name is still snake_case,
+ * but the JSON inside is not. */
 export interface PodcastRow {
   id: string;
   topic: string;
   status: string;
   audio_url: string | null;
   duration_seconds: number | null;
-  chapter_markers: Array<{ timestamp_seconds: number; title: string }>;
+  chapter_markers: Array<{ timestampSeconds: number; title: string }>;
   has_ads: boolean;
   created_at: string;
   error_message: string | null;
+  status_started_at: string | null;
 }
 
 /** App-level type — camelCase to match TypeScript pipeline conventions */
@@ -26,6 +32,7 @@ export interface Podcast {
   hasAds: boolean;
   createdAt: string;
   errorMessage: string | null;
+  statusStartedAt: string | null;
 }
 
 export function toPodcast(row: PodcastRow): Podcast {
@@ -36,12 +43,13 @@ export function toPodcast(row: PodcastRow): Podcast {
     audioUrl: row.audio_url,
     durationSeconds: row.duration_seconds,
     chapterMarkers: (row.chapter_markers ?? []).map((ch) => ({
-      timestampSeconds: ch.timestamp_seconds,
+      timestampSeconds: ch.timestampSeconds,
       title: ch.title,
     })),
     hasAds: row.has_ads,
     createdAt: row.created_at,
     errorMessage: row.error_message,
+    statusStartedAt: row.status_started_at ?? row.created_at,
   };
 }
 
@@ -52,17 +60,26 @@ export function usePodcasts() {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchPodcasts = useCallback(async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from("podcasts")
-      .select("*")
-      .eq("user_id", user.id)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false });
+    if (!user) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from("podcasts")
+        .select("*")
+        .eq("user_id", user.id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
 
-    if (!error && data) setPodcasts((data as unknown as PodcastRow[]).map(toPodcast));
-    setLoading(false);
-    setRefreshing(false);
+      if (!error && data) {
+        setPodcasts((data as unknown as PodcastRow[]).map(toPodcast));
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [user]);
 
   useEffect(() => {

@@ -22,6 +22,12 @@ export async function generateQuestions(topic: string): Promise<string[]> {
   }
 
   const data = await response.json();
+  if (
+    !Array.isArray(data?.questions) ||
+    !data.questions.every((q: unknown) => typeof q === "string")
+  ) {
+    throw new Error("Server returned an unexpected shape. Try again.");
+  }
   return data.questions;
 }
 

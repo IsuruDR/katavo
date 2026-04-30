@@ -1,6 +1,19 @@
 import { useEffect } from "react";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { ConversationProvider } from "@elevenlabs/react-native";
+import {
+  IBMPlexSans_400Regular,
+  IBMPlexSans_500Medium,
+  IBMPlexSans_600SemiBold,
+  IBMPlexSans_700Bold,
+  useFonts as useSansFonts,
+} from "@expo-google-fonts/ibm-plex-sans";
+import {
+  IBMPlexSerif_400Regular,
+  IBMPlexSerif_500Medium,
+  IBMPlexSerif_600SemiBold,
+  IBMPlexSerif_700Bold,
+} from "@expo-google-fonts/ibm-plex-serif";
 import { AuthProvider, useAuth } from "../src/hooks/useAuth";
 import { usePushNotifications } from "../src/hooks/usePushNotifications";
 import { configureRevenueCat } from "../src/services/revenucat";
@@ -20,6 +33,17 @@ function RootLayoutInner() {
   const router = useRouter();
   usePushNotifications();
 
+  const [fontsLoaded] = useSansFonts({
+    IBMPlexSans_400Regular,
+    IBMPlexSans_500Medium,
+    IBMPlexSans_600SemiBold,
+    IBMPlexSans_700Bold,
+    IBMPlexSerif_400Regular,
+    IBMPlexSerif_500Medium,
+    IBMPlexSerif_600SemiBold,
+    IBMPlexSerif_700Bold,
+  });
+
   useEffect(() => {
     if (session?.user) {
       configureRevenueCat(session.user.id);
@@ -27,7 +51,7 @@ function RootLayoutInner() {
   }, [session]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || !fontsLoaded) return;
 
     const inAuthGroup = segments[0] === "(auth)";
 
@@ -36,9 +60,9 @@ function RootLayoutInner() {
     } else if (session && inAuthGroup) {
       router.replace("/(tabs)");
     }
-  }, [session, loading, segments]);
+  }, [session, loading, fontsLoaded, segments]);
 
-  if (loading) return <LoadingOverlay message="Loading..." />;
+  if (loading || !fontsLoaded) return <LoadingOverlay message="" />;
 
   return (
     <ConversationProvider>
