@@ -15,20 +15,25 @@ import {
   IBMPlexSerif_700Bold,
 } from "@expo-google-fonts/ibm-plex-serif";
 import { AuthProvider, useAuth } from "../src/hooks/useAuth";
+import { useProfile } from "../src/hooks/useProfile";
 import { usePushNotifications } from "../src/hooks/usePushNotifications";
 import { configureRevenueCat } from "../src/services/revenucat";
 import { LoadingOverlay } from "../src/components/LoadingOverlay";
+import { PlayingPodcastProvider } from "../src/state/PlayingPodcastContext";
 
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutInner />
+      <PlayingPodcastProvider>
+        <RootLayoutInner />
+      </PlayingPodcastProvider>
     </AuthProvider>
   );
 }
 
 function RootLayoutInner() {
   const { session, loading } = useAuth();
+  const { profile, loading: profileLoading } = useProfile();
   const segments = useSegments();
   const router = useRouter();
   usePushNotifications();
@@ -54,13 +59,35 @@ function RootLayoutInner() {
     if (loading || !fontsLoaded) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inOnboardingGroup = segments[0] === "(onboarding)";
 
+    // Not signed in → bounce to sign-in unless we're already there
     if (!session && !inAuthGroup) {
       router.replace("/(auth)/sign-in");
-    } else if (session && inAuthGroup) {
-      router.replace("/(tabs)");
+      return;
     }
-  }, [session, loading, fontsLoaded, segments]);
+
+    // Signed in but in auth group → out
+    if (session && inAuthGroup) {
+      router.replace("/(tabs)");
+      return;
+    }
+
+    // Onboarding gate (only after profile has loaded)
+    if (session && !profileLoading) {
+      const needsOnboarding = !profile?.preferredVoice;
+
+      if (needsOnboarding && !inOnboardingGroup && !inAuthGroup) {
+        router.replace("/(onboarding)/welcome");
+        return;
+      }
+
+      if (!needsOnboarding && inOnboardingGroup) {
+        router.replace("/(tabs)");
+        return;
+      }
+    }
+  }, [session, loading, fontsLoaded, segments, profile, profileLoading]);
 
   if (loading || !fontsLoaded) return <LoadingOverlay message="" />;
 
