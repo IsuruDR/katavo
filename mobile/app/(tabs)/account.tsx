@@ -1,8 +1,10 @@
 // mobile/app/(tabs)/account.tsx
 import { useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { useRouter } from "expo-router";
 import { useAuth } from "../../src/hooks/useAuth";
 import { useSubscription } from "../../src/hooks/useSubscription";
+import { useProfile } from "../../src/hooks/useProfile";
 import { CreditBalance } from "../../src/components/CreditBalance";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
 import { SubscriptionModal } from "../../src/components/SubscriptionModal";
@@ -13,6 +15,8 @@ const CREDIT_PRICES: Record<string, number> = { free: 5, plus: 4, pro: 3 };
 export default function Account() {
   const { user, signOut } = useAuth();
   const { subscription, loading, refresh } = useSubscription();
+  const router = useRouter();
+  const { profile } = useProfile();
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
 
@@ -43,6 +47,15 @@ export default function Account() {
           )}
         </View>
       )}
+
+      <TouchableOpacity style={styles.voiceRow} onPress={() => router.push("/voice-settings")}>
+        <Text style={styles.voiceLabel}>Voice</Text>
+        <Text style={styles.voiceValue}>
+          {profile?.preferredVoice
+            ? profile.preferredVoice.charAt(0).toUpperCase() + profile.preferredVoice.slice(1)
+            : "—"}
+        </Text>
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.buyButton} onPress={handleBuyCredit}>
         <Text style={styles.buyText}>Buy Extra Credit (${creditPrice})</Text>
@@ -87,6 +100,18 @@ const styles = StyleSheet.create({
   deepDiveLabel: { fontSize: 14, color: "#888", marginBottom: 4 },
   deepDiveMinutes: { fontSize: 20, fontWeight: "700", color: "#6366f1" },
   deepDiveRenewal: { fontSize: 12, color: "#555", marginTop: 4 },
+  voiceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#1a1a1a",
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  voiceLabel: { fontSize: 16, color: "#fff" },
+  voiceValue: { fontSize: 16, color: "#888" },
   buyButton: {
     backgroundColor: "#1a1a1a",
     borderRadius: 12,
