@@ -80,7 +80,7 @@ describe("OpenAITTS", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        instructions: expect.stringContaining("podcast host"),
+        instructions: expect.stringContaining("coffee table"),
       }),
     );
   });
