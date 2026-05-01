@@ -53,6 +53,7 @@ export function splitScriptSegments(script: string): ScriptSegment[] {
 export async function stitchAudio(
   segments: ScriptSegment[],
   tts: TTSProvider,
+  voice?: string | null,
 ): Promise<{ audioBytes: Buffer; durationSeconds: number }> {
   const tempDir = mkdtempSync(join(tmpdir(), "podcast-audio-"));
 
@@ -70,7 +71,7 @@ export async function stitchAudio(
           // Ad file not found — skip
         }
       } else if (segment.type === "text" && segment.content) {
-        const audioBytes = await tts.synthesize(segment.content);
+        const audioBytes = await tts.synthesize(segment.content, voice ?? undefined);
         const partPath = join(tempDir, `part_${i}.mp3`);
         writeFileSync(partPath, audioBytes);
         partFiles.push(partPath);
@@ -112,7 +113,7 @@ export async function audioProducer(
 
   const tts = getTtsProvider();
   const segments = splitScriptSegments(script);
-  const { audioBytes, durationSeconds } = await stitchAudio(segments, tts);
+  const { audioBytes, durationSeconds } = await stitchAudio(segments, tts, state.voice);
 
   const supabase = getSupabaseClient();
   const storagePath = `${userId}/${podcastId}.mp3`;

@@ -31,6 +31,7 @@ export const PipelineState = Annotation.Root({
   credibilityScore: Annotation<number | null>,
   credibilityReport: Annotation<string>,
   researchIterations: Annotation<number>,
+  voice: Annotation<string | null>,
 
   // Script phase
   script: Annotation<string>,
@@ -71,6 +72,7 @@ export function makeInitialState(overrides: Partial<PipelineStateType>): Pipelin
     credibilityScore: null,
     credibilityReport: "",
     researchIterations: 0,
+    voice: null,
     script: "",
     chapterResearchMap: null,
     adMarkers: null,
