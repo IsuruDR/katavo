@@ -3,13 +3,13 @@
  *   - Onboarding screen 2 (initial pick)
  *   - Account → Voice settings (edit)
  *
- * Plays bundled sample mp3 on tap. Calls onSelect with the voice ID
- * when the user taps the CTA. Caller handles persistence.
+ * Plays bundled sample mp3 on tap via expo-audio. Calls onSelect with
+ * the voice ID when the user taps the CTA. Caller handles persistence.
  */
 
 import { useState, useEffect, useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
-import { Audio } from "expo-av";
+import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import { VOICES, type VoiceMeta } from "../lib/voiceSamples";
 
 interface Props {
@@ -28,30 +28,39 @@ export function VoicePicker({
   const [picked, setPicked] = useState<string | null>(initialValue ?? null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
 
   useEffect(() => {
     return () => {
-      // Cleanup on unmount — stop and release any playing sample.
-      soundRef.current?.unloadAsync();
+      // Cleanup on unmount — release any active player.
+      playerRef.current?.release();
+      playerRef.current = null;
     };
   }, []);
 
-  const playSample = async (voice: VoiceMeta) => {
+  const playSample = (voice: VoiceMeta) => {
     try {
-      // Stop any currently-playing sample first.
-      await soundRef.current?.unloadAsync();
-      soundRef.current = null;
+      // Release any currently-playing sample first.
+      playerRef.current?.release();
+      playerRef.current = null;
 
-      const { sound } = await Audio.Sound.createAsync(voice.sample, {
-        shouldPlay: true,
-      });
-      soundRef.current = sound;
+      const player = createAudioPlayer(voice.sample);
+      playerRef.current = player;
       setPlayingId(voice.id);
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (!status.isLoaded) return;
-        if (status.didJustFinish) setPlayingId(null);
+
+      // Detect when the sample finishes — flip the playing indicator off.
+      // Heuristic: status update where currentTime is within 100ms of duration,
+      // or where playing flipped to false after having loaded.
+      const sub = player.addListener("playbackStatusUpdate", (status) => {
+        const d = status.duration ?? 0;
+        const t = status.currentTime ?? 0;
+        if (d > 0 && t >= d - 0.1) {
+          setPlayingId((current) => (current === voice.id ? null : current));
+          sub.remove();
+        }
       });
+
+      player.play();
     } catch (err) {
       console.error("Sample playback failed:", err);
       setPlayingId(null);
