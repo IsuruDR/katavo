@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Katavo",
+    "slug": "katavo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "aipodcast",
+    "scheme": "katavo",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
@@ -13,12 +13,16 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "co.katavo.app",
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app needs microphone access for Deep Dive voice conversations with the AI researcher."
-      }
+        "NSMicrophoneUsageDescription": "This app needs microphone access for Deep Dive voice conversations with the AI researcher.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bitcode": false
     },
     "android": {
+      "package": "co.katavo.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,7 +36,15 @@
         "INTERNET",
         "MODIFY_AUDIO_SETTINGS",
         "WAKE_LOCK",
-        "BLUETOOTH"
+        "BLUETOOTH",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH"
       ]
     },
     "web": {
@@ -41,7 +53,15 @@
     "plugins": [
       "expo-router",
       "@livekit/react-native-expo-plugin",
-      "@config-plugins/react-native-webrtc"
-    ]
+      "@config-plugins/react-native-webrtc",
+      "expo-audio"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b81cd0c8-2a69-4bb0-93e7-22066943c040"
+      }
+    },
+    "owner": "isurudilshan"
   }
 }
