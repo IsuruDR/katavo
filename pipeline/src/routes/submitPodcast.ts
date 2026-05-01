@@ -55,6 +55,14 @@ route.post("/", userAuth, async (c) => {
       );
     }
 
+    // Pull preferred voice. Null means use pipeline default (TTS_VOICE).
+    const { data: profile } = await serviceClient
+      .from("profiles")
+      .select("preferred_voice")
+      .eq("id", user.id)
+      .single();
+    const voice = profile?.preferred_voice ?? null;
+
     // Check concurrent generation limit
     const tierLimits: Record<string, number> = { free: 1, plus: 2, pro: 3 };
     const maxConcurrent = tierLimits[subscription.tier] || 1;
@@ -116,6 +124,7 @@ route.post("/", userAuth, async (c) => {
         clarifying_answers: clarifyingAnswers || [],
         status: "queued",
         has_ads: hasAds,
+        voice,
       })
       .select()
       .single();
@@ -154,6 +163,7 @@ route.post("/", userAuth, async (c) => {
         hasAds,
         trustedSourceUrls,
         tier: subscription.tier,
+        voice,
       });
     } catch (err) {
       // Job already enqueued (deduplication) — this is fine, return success
