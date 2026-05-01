@@ -88,8 +88,8 @@ route.post("/", webhookAuth, async (c) => {
           .update({
             tier: "free",
             status: "active",
-            credits_per_month: 1,
-            credits_remaining: 1,
+            credits_per_month: 2,
+            credits_remaining: 2,
             deep_dive_minutes_per_month: 0,
             deep_dive_minutes_remaining: 0,
             revenucat_subscription_id: null,
