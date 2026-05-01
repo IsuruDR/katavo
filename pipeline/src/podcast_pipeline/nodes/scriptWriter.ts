@@ -76,7 +76,7 @@ export async function scriptWriter(
       { role: "system", content: prompt },
       { role: "user", content: "Write the podcast script." },
     ],
-    max_tokens: 4000,
+    max_tokens: 6000,
   });
 
   const rawOutput = response.choices[0].message.content ?? "";
