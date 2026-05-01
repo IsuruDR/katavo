@@ -11,6 +11,7 @@
  */
 import { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -19,6 +20,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import * as Notifications from "expo-notifications";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useSubscription } from "../../src/hooks/useSubscription";
@@ -70,10 +72,25 @@ export default function Generate() {
     try {
       await submitPodcast(topic.trim(), answers);
       refreshSub();
-      setPhase("input");
-      setTopic("");
-      setQuestions([]);
-      router.push("/(tabs)");
+      Alert.alert(
+        "Researching now",
+        "This usually takes about 15 minutes. We'll send you a notification when your podcast is ready.",
+        [
+          {
+            text: "OK",
+            onPress: async () => {
+              // Request push permission contextually — they just consented
+              // to "we'll notify you," the OS dialog asks the same thing.
+              // Idempotent: no-op if already granted/denied.
+              await Notifications.requestPermissionsAsync().catch(() => {});
+              setPhase("input");
+              setTopic("");
+              setQuestions([]);
+              router.push("/(tabs)");
+            },
+          },
+        ],
+      );
     } catch (e: any) {
       setError(e?.message || "Couldn't send your topic. Try again.");
       setPhase("input");
