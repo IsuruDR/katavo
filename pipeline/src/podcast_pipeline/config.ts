@@ -103,7 +103,7 @@ export const AD_PRE_ROLL_MARKER = "[AD:PRE_ROLL]";
 export const AD_MID_ROLL_MARKER = "[AD:MID_ROLL]";
 
 // TTS
-export const TTS_VOICE = "coral";
+export const TTS_VOICE = "ballad";
 export const TTS_VOICE_INSTRUCTIONS = `Speak like a knowledgeable friend recording a podcast at a coffee table — not a presenter, not a narrator. Tone: warm, slightly amused, low-energy confident.
 
 Pacing: moderate. Take micro-pauses before complex names, numbers, or dates so they land. Take longer breaths at chapter transitions and after big ideas. Don't rush.

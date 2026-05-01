@@ -46,7 +46,7 @@ describe("OpenAITTS", () => {
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "gpt-4o-mini-tts",
-        voice: "coral",
+        voice: "ballad",
         input: "Hello, this is a test.",
         response_format: "mp3",
       }),
