@@ -15,7 +15,7 @@ import {
   IBMPlexSerif_700Bold,
 } from "@expo-google-fonts/ibm-plex-serif";
 import { AuthProvider, useAuth } from "../src/hooks/useAuth";
-import { useProfile } from "../src/hooks/useProfile";
+import { ProfileProvider, useProfile } from "../src/hooks/useProfile";
 import { usePushNotifications } from "../src/hooks/usePushNotifications";
 import { configureRevenueCat } from "../src/services/revenucat";
 import { LoadingOverlay } from "../src/components/LoadingOverlay";
@@ -24,9 +24,11 @@ import { PlayingPodcastProvider } from "../src/state/PlayingPodcastContext";
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <PlayingPodcastProvider>
-        <RootLayoutInner />
-      </PlayingPodcastProvider>
+      <ProfileProvider>
+        <PlayingPodcastProvider>
+          <RootLayoutInner />
+        </PlayingPodcastProvider>
+      </ProfileProvider>
     </AuthProvider>
   );
 }
