@@ -28,18 +28,21 @@ export interface Profile {
   id: string;
   displayName: string | null;
   preferredVoice: string | null;
+  onboardingComplete: boolean;
 }
 
 interface ProfileRow {
   id: string;
   display_name: string | null;
   preferred_voice: string | null;
+  onboarding_complete: boolean | null;
 }
 
 interface ProfileContextType {
   profile: Profile | null;
   loading: boolean;
   setPreferredVoice: (voice: string) => Promise<void>;
+  setOnboardingComplete: (complete: boolean) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -50,6 +53,7 @@ function toProfile(row: ProfileRow): Profile {
     id: row.id,
     displayName: row.display_name,
     preferredVoice: row.preferred_voice,
+    onboardingComplete: !!row.onboarding_complete,
   };
 }
 
@@ -66,7 +70,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     }
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, display_name, preferred_voice")
+      .select("id, display_name, preferred_voice, onboarding_complete")
       .eq("id", user.id)
       .single();
     if (!error && data) setProfile(toProfile(data as unknown as ProfileRow));
@@ -108,7 +112,12 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       setProfile((prev) =>
         prev
           ? { ...prev, preferredVoice: voice }
-          : { id: user.id, displayName: null, preferredVoice: voice },
+          : {
+              id: user.id,
+              displayName: null,
+              preferredVoice: voice,
+              onboardingComplete: false,
+            },
       );
       const { error } = await supabase
         .from("profiles")
@@ -123,9 +132,35 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     [user, fetch],
   );
 
+  const setOnboardingComplete = useCallback(
+    async (complete: boolean) => {
+      if (!user) return;
+      // Skip the round-trip when already in the desired state.
+      if (profile?.onboardingComplete === complete) return;
+      setProfile((prev) =>
+        prev ? { ...prev, onboardingComplete: complete } : prev,
+      );
+      const { error } = await supabase
+        .from("profiles")
+        .update({ onboarding_complete: complete })
+        .eq("id", user.id);
+      if (error) {
+        await fetch();
+        throw error;
+      }
+    },
+    [user, profile, fetch],
+  );
+
   const value = useMemo<ProfileContextType>(
-    () => ({ profile, loading, setPreferredVoice, refresh: fetch }),
-    [profile, loading, setPreferredVoice, fetch],
+    () => ({
+      profile,
+      loading,
+      setPreferredVoice,
+      setOnboardingComplete,
+      refresh: fetch,
+    }),
+    [profile, loading, setPreferredVoice, setOnboardingComplete, fetch],
   );
 
   return (

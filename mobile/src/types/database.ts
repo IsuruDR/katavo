@@ -123,6 +123,7 @@ export type Database = {
           expo_push_token: string | null
           id: string
           notification_preferences: Json | null
+          onboarding_complete: boolean
           preferred_voice: string | null
           updated_at: string
         }
@@ -132,6 +133,7 @@ export type Database = {
           expo_push_token?: string | null
           id: string
           notification_preferences?: Json | null
+          onboarding_complete?: boolean
           preferred_voice?: string | null
           updated_at?: string
         }
@@ -141,6 +143,7 @@ export type Database = {
           expo_push_token?: string | null
           id?: string
           notification_preferences?: Json | null
+          onboarding_complete?: boolean
           preferred_voice?: string | null
           updated_at?: string
         }

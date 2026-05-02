@@ -9,7 +9,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { VoicePicker } from "../../src/components/VoicePicker";
 import { useProfile } from "../../src/hooks/useProfile";
-import { pickOnboardingPlaceholder } from "../../src/lib/podcastPlaceholders";
 import { color, space, text } from "../../src/theme/tokens";
 
 export default function VoiceOnboarding() {
@@ -18,12 +17,8 @@ export default function VoiceOnboarding() {
 
   const handleSelect = async (voice: string) => {
     await setPreferredVoice(voice);
-    // Navigate straight to the Generate tab with a placeholder topic
-    // pre-filled. router.replace so the back stack doesn't keep onboarding.
-    router.replace({
-      pathname: "/(tabs)/generate",
-      params: { placeholder: pickOnboardingPlaceholder() },
-    });
+    // router.replace so the back stack doesn't keep the onboarding screens.
+    router.replace("/(tabs)/generate");
   };
 
   return (

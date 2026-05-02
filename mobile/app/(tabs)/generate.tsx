@@ -9,7 +9,7 @@
  * spinners. Errors show inline at the top of the input phase rather than as
  * disruptive alerts.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -22,8 +22,9 @@ import {
 } from "react-native";
 import * as Notifications from "expo-notifications";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter } from "expo-router";
 import { useSubscription } from "../../src/hooks/useSubscription";
+import { useProfile } from "../../src/hooks/useProfile";
 import { CreditChip } from "../../src/components/CreditChip";
 import { ClarifyingForm } from "../../src/components/ClarifyingForm";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
@@ -38,23 +39,11 @@ type Phase = "input" | "loading-questions" | "clarifying" | "submitting";
 export default function Generate() {
   const router = useRouter();
   const { subscription, refresh: refreshSub } = useSubscription();
-  const params = useLocalSearchParams<{ placeholder?: string }>();
+  const { setOnboardingComplete } = useProfile();
   const [topic, setTopic] = useState("");
   const [questions, setQuestions] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>("input");
   const [error, setError] = useState<string | null>(null);
-
-  // First arrival from onboarding lands here with ?placeholder=… so the
-  // Generate tab opens with a topic already in place. Only seed once, only
-  // when the field is empty (don't trample user input on later visits).
-  useEffect(() => {
-    if (params.placeholder && !topic) {
-      setTopic(String(params.placeholder));
-      // Clear the param so a tab re-mount doesn't re-seed.
-      router.setParams({ placeholder: undefined });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.placeholder]);
 
   const credits = subscription?.creditsRemaining ?? 0;
   const hasCredits = credits >= 1;
@@ -85,6 +74,9 @@ export default function Generate() {
     try {
       await submitPodcast(topic.trim(), answers);
       refreshSub();
+      // First successful submit ends focused-onboarding mode; the tab bar
+      // appears from here on. Idempotent on subsequent submits.
+      setOnboardingComplete(true).catch(() => {});
       Alert.alert(
         "Researching now",
         "This usually takes about 15 minutes. We'll send you a notification when your podcast is ready.",

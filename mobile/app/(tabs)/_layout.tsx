@@ -3,17 +3,28 @@ import { BottomTabBar } from "@react-navigation/bottom-tabs";
 import { Tabs } from "expo-router";
 import { View } from "react-native";
 import { MiniPlayer } from "../../src/components/MiniPlayer";
+import { useProfile } from "../../src/hooks/useProfile";
 import { color, font } from "../../src/theme/tokens";
 
 export default function TabLayout() {
+  const { profile } = useProfile();
+  // Default to "show" while profile loads so returning users don't see a
+  // brief flash of the bar disappearing. New users have onboardingComplete
+  // = false from the trigger default and stay focused on Generate.
+  const showTabBar = profile?.onboardingComplete ?? true;
+
   return (
     <Tabs
-      tabBar={(props) => (
-        <View>
-          <MiniPlayer />
-          <BottomTabBar {...props} />
-        </View>
-      )}
+      tabBar={
+        showTabBar
+          ? (props) => (
+              <View>
+                <MiniPlayer />
+                <BottomTabBar {...props} />
+              </View>
+            )
+          : () => null
+      }
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: color.accent,

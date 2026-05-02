@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
+import { Feather } from "@expo/vector-icons";
 import { color, font, space, text } from "../theme/tokens";
 import { VOICES, type VoiceMeta } from "../lib/voiceSamples";
 
@@ -48,6 +49,12 @@ export function VoicePicker({
     };
   }, []);
 
+  const stopSample = () => {
+    playerRef.current?.release();
+    playerRef.current = null;
+    setPlayingId(null);
+  };
+
   const playSample = (voice: VoiceMeta) => {
     try {
       playerRef.current?.release();
@@ -70,6 +77,16 @@ export function VoicePicker({
     } catch (err) {
       console.error("Sample playback failed:", err);
       setPlayingId(null);
+    }
+  };
+
+  const handleRowPress = (voice: VoiceMeta) => {
+    setPicked(voice.id);
+    if (playingId === voice.id) {
+      // Same voice is rolling — stop it.
+      stopSample();
+    } else {
+      playSample(voice);
     }
   };
 
@@ -96,31 +113,42 @@ export function VoicePicker({
               {i > 0 && <View style={styles.divider} />}
               <TouchableOpacity
                 style={styles.row}
-                onPress={() => {
-                  setPicked(voice.id);
-                  playSample(voice);
-                }}
+                onPress={() => handleRowPress(voice)}
                 activeOpacity={0.55}
                 accessibilityRole="button"
-                accessibilityLabel={`${voice.name} voice — ${voice.descriptor}`}
+                accessibilityLabel={
+                  isPlaying
+                    ? `Stop ${voice.name} sample`
+                    : `Play ${voice.name} sample, ${voice.descriptor}`
+                }
                 accessibilityState={{ selected: isPicked }}
               >
                 <View
                   style={[styles.rule, isPicked && styles.ruleActive]}
                 />
                 <View style={styles.body}>
-                  <Text
-                    style={isPicked ? styles.namePicked : styles.name}
-                  >
+                  <Text style={isPicked ? styles.namePicked : styles.name}>
                     {voice.name}
                   </Text>
                   <Text style={styles.descriptor}>{voice.descriptor}</Text>
                 </View>
-                {isPlaying ? (
-                  <Text style={styles.playing}>PLAYING</Text>
-                ) : (
-                  <Text style={styles.playGlyph}>▶</Text>
-                )}
+                <View
+                  style={[
+                    styles.indicator,
+                    isPlaying ? styles.indicatorPlaying : styles.indicatorIdle,
+                  ]}
+                >
+                  {isPlaying ? (
+                    <View style={styles.stopSquare} />
+                  ) : (
+                    <Feather
+                      name="play"
+                      size={14}
+                      color={color.accent}
+                      style={styles.playOptical}
+                    />
+                  )}
+                </View>
               </TouchableOpacity>
             </View>
           );
@@ -199,19 +227,30 @@ const styles = StyleSheet.create({
     ...text.bodySmall,
     color: color.inkSecondary,
   },
-  playGlyph: {
-    fontFamily: font.sansMedium,
-    fontSize: 14,
-    color: color.inkTertiary,
-    paddingTop: 4,
+  indicator: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
   },
-  playing: {
-    fontFamily: font.sansSemiBold,
-    fontSize: 11,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    color: color.accent,
-    paddingTop: 6,
+  indicatorIdle: {
+    backgroundColor: color.paper,
+    borderWidth: 1.5,
+    borderColor: color.accent,
+  },
+  indicatorPlaying: {
+    backgroundColor: color.accent,
+  },
+  playOptical: {
+    marginLeft: 1,
+  },
+  stopSquare: {
+    width: 12,
+    height: 12,
+    backgroundColor: color.paper,
+    borderRadius: 1,
   },
   helper: {
     ...text.bodySmall,
