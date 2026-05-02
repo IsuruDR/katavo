@@ -121,37 +121,40 @@ Both are native modules. **One EAS dev rebuild** before testing on-device.
 
 ### `mobile/package.json`
 
-```
-+ "expo-apple-authentication": "~latest"
-+ "@react-native-google-signin/google-signin": "~latest"
+Pinned to current SDK 55-compatible majors (verified against expo install matrix). The implementer should run `expo install` rather than hand-editing — those commands resolve the exact compatible patch versions automatically:
+
+```bash
+node node_modules/expo/bin/cli install expo-apple-authentication
+node node_modules/expo/bin/cli install @react-native-google-signin/google-signin
 ```
 
-### `mobile/app.json` (additions)
+Expected resolved versions: `expo-apple-authentication ^7.x`, `@react-native-google-signin/google-signin ^14.x`. If `expo install` produces different majors, surface it before continuing — Google's idToken field shape can change between majors.
+
+### `mobile/app.json` (additions, applied as edits to existing structure)
+
+Three additions to the existing `app.json`. The implementer reads the current file and applies these as targeted edits — there is no full-file replacement.
+
+1. Add `"usesAppleSignIn": true` to `expo.ios`.
+2. Append a `CFBundleURLTypes` entry to `expo.ios.infoPlist` with the Google reversed client ID:
 
 ```jsonc
-{
-  "expo": {
-    "ios": {
-      "bundleIdentifier": "co.katavo.app",
-      "usesAppleSignIn": true,
-      "infoPlist": {
-        "CFBundleURLTypes": [
-          {
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.<YOUR-IOS-CLIENT-ID>"
-            ]
-          }
-        ]
-      }
-    },
-    "plugins": [
-      "...existing",
-      "expo-apple-authentication",
-      "@react-native-google-signin/google-signin"
+"CFBundleURLTypes": [
+  {
+    "CFBundleURLSchemes": [
+      "com.googleusercontent.apps.<YOUR-IOS-CLIENT-ID>"
     ]
   }
-}
+]
 ```
+
+3. Append two plugin entries to the existing `expo.plugins` array (which today contains `expo-router`, `@livekit/react-native-expo-plugin`, `@config-plugins/react-native-webrtc`, `expo-audio`):
+
+```jsonc
+"expo-apple-authentication",
+"@react-native-google-signin/google-signin"
+```
+
+Final plugins order: `expo-router`, `@livekit/react-native-expo-plugin`, `@config-plugins/react-native-webrtc`, `expo-audio`, `expo-apple-authentication`, `@react-native-google-signin/google-signin`.
 
 ### `mobile/.env` (additions)
 
@@ -213,7 +216,9 @@ export async function signInWithGoogle(): Promise<{ displayName?: string }> {
   ensureGoogleConfigured();
   await GoogleSignin.hasPlayServices();
   const userInfo = await GoogleSignin.signIn();
-  const idToken = userInfo.idToken ?? userInfo.data?.idToken;
+  // v14 uses userInfo.data.idToken; older majors used userInfo.idToken.
+  // Fallback covers both — confirm shape during implementation.
+  const idToken = userInfo.data?.idToken ?? (userInfo as { idToken?: string }).idToken;
   if (!idToken) {
     throw new Error("Google sign-in returned no ID token");
   }
@@ -230,7 +235,19 @@ export { statusCodes as googleStatusCodes };
 
 ### `mobile/src/hooks/useAuth.tsx` (additions)
 
-Two new actions on the AuthContext. Persist display name only if profile is currently empty.
+Three things change here, all in the same file:
+
+1. **`AuthContextType` interface** — add the two new action signatures:
+
+```ts
+interface AuthContextType {
+  // ...existing fields...
+  signInWithApple: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+}
+```
+
+2. **AuthProvider body** — define the two callbacks:
 
 ```ts
 const signInWithApple = useCallback(async () => {
@@ -260,6 +277,23 @@ async function persistDisplayNameIfMissing(name: string): Promise<void> {
 }
 ```
 
+3. **`AuthContext.Provider` value prop** — pass them through:
+
+```tsx
+<AuthContext.Provider
+  value={{
+    session,
+    user,
+    loading,
+    signIn,
+    signUp,
+    signOut,
+    signInWithApple,
+    signInWithGoogle,
+  }}
+>
+```
+
 ### `mobile/app/(auth)/sign-in.tsx` and `mobile/app/(auth)/sign-up.tsx`
 
 Apple uses the official `<AppleAuthenticationButton />` (HIG-compliant, auto-styles for light/dark). Google uses a small new component matching the project's pill styling.
@@ -282,9 +316,30 @@ Apple uses the official `<AppleAuthenticationButton />` (HIG-compliant, auto-sty
 
 `<GoogleButton />` is a new component: 56pt tall, rounded pill, white background with hairline border, Google "G" SVG mark + "Continue with Google" label.
 
-### Error handling
+### Loading + error handling
 
-Both providers throw on user-cancellation. Cancellation is silent — no error UI. All other errors bubble through `setError` to the existing inline error display in sign-in.tsx.
+While a native sheet is open, no app-level loading state is needed — the OS sheet itself is the user feedback. Once the sheet dismisses and `signInWithIdToken` is in-flight (network round-trip to Supabase, typically 200-500 ms), the sign-in screen stays as-is — no full-screen `<LoadingOverlay>`. The buttons should disable themselves to prevent a double-tap during this window:
+
+```tsx
+const [submitting, setSubmitting] = useState<"apple" | "google" | null>(null);
+
+const handleApple = async () => {
+  setSubmitting("apple");
+  try {
+    await signInWithApple();
+  } catch (e: any) {
+    if (!isCancellationError(e)) setError(e.message);
+  } finally {
+    setSubmitting(null);
+  }
+};
+```
+
+Cancellation is silent — Apple throws with `code === "ERR_REQUEST_CANCELED"`, Google throws with `code === googleStatusCodes.SIGN_IN_CANCELLED`. The `isCancellationError(e)` helper checks both. All other errors surface inline via the existing `setError` pattern.
+
+### Sign-up screen layout caveat
+
+`sign-up.tsx` has two render states today: the form (default) and a "Check your email" confirmation after a successful email sign-up. Social buttons only appear on the form state. The confirmation state is unchanged — social sign-up doesn't need email confirmation since the OAuth handshake already verifies the email.
 
 ## Out of scope
 
