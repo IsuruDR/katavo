@@ -11,7 +11,6 @@
  */
 import { useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -28,6 +27,7 @@ import { useProfile } from "../../src/hooks/useProfile";
 import { CreditChip } from "../../src/components/CreditChip";
 import { ClarifyingForm } from "../../src/components/ClarifyingForm";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
+import { ResearchingSheet } from "../../src/components/ResearchingSheet";
 import {
   generateQuestions,
   submitPodcast,
@@ -44,6 +44,7 @@ export default function Generate() {
   const [questions, setQuestions] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>("input");
   const [error, setError] = useState<string | null>(null);
+  const [showResearching, setShowResearching] = useState(false);
 
   const credits = subscription?.creditsRemaining ?? 0;
   const hasCredits = credits >= 1;
@@ -77,29 +78,23 @@ export default function Generate() {
       // First successful submit ends focused-onboarding mode; the tab bar
       // appears from here on. Idempotent on subsequent submits.
       setOnboardingComplete(true).catch(() => {});
-      Alert.alert(
-        "Researching now",
-        "This usually takes about 15 minutes. We'll send you a notification when your podcast is ready.",
-        [
-          {
-            text: "OK",
-            onPress: async () => {
-              // Request push permission contextually — they just consented
-              // to "we'll notify you," the OS dialog asks the same thing.
-              // Idempotent: no-op if already granted/denied.
-              await Notifications.requestPermissionsAsync().catch(() => {});
-              setPhase("input");
-              setTopic("");
-              setQuestions([]);
-              router.push("/(tabs)");
-            },
-          },
-        ],
-      );
+      // Drop loading overlay so the sheet has a clean paper backdrop.
+      setPhase("input");
+      setShowResearching(true);
     } catch (e: any) {
       setError(e?.message || "Couldn't send your topic. Try again.");
       setPhase("input");
     }
+  };
+
+  const handleResearchingDismiss = async () => {
+    setShowResearching(false);
+    // The sheet just promised "we'll send a notification" — request
+    // permission now while the consent context is fresh. Idempotent.
+    Notifications.requestPermissionsAsync().catch(() => {});
+    setTopic("");
+    setQuestions([]);
+    router.push("/(tabs)");
   };
 
   const handleClarifyingBack = () => {
@@ -183,6 +178,11 @@ export default function Generate() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <ResearchingSheet
+        visible={showResearching}
+        onDismiss={handleResearchingDismiss}
+      />
     </SafeAreaView>
   );
 }
