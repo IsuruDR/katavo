@@ -4,7 +4,6 @@
  * Editorial paper page wrapping the reusable VoicePicker. Tap a voice to
  * hear a sample, tap Continue to persist and advance.
  */
-import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -15,17 +14,7 @@ import { color, space, text } from "../../src/theme/tokens";
 
 export default function VoiceOnboarding() {
   const router = useRouter();
-  const { profile, setPreferredVoice } = useProfile();
-
-  // Kill-relaunch case: user has a voice set but somehow landed back on
-  // this screen. Bounce them into Generate so onboarding doesn't loop.
-  // (The root layout no longer auto-redirects out of onboarding, so this
-  // self-bounce covers the edge case.)
-  useEffect(() => {
-    if (profile?.preferredVoice) {
-      router.replace("/(tabs)");
-    }
-  }, [profile?.preferredVoice, router]);
+  const { setPreferredVoice } = useProfile();
 
   const handleSelect = async (voice: string) => {
     await setPreferredVoice(voice);
