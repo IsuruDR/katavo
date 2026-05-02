@@ -5,11 +5,22 @@
  *
  * Plays bundled sample mp3 on tap via expo-audio. Calls onSelect with
  * the voice ID when the user taps the CTA. Caller handles persistence.
+ *
+ * Each voice is a flat row: optional leading 2px Library Green rule for
+ * the picked voice, Plex Serif name, ink-secondary descriptor, typographic
+ * play indicator on the right (▶ glyph at rest, "PLAYING" eyebrow when
+ * the sample is rolling).
  */
-
-import { useState, useEffect, useRef } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
+import { color, font, space, text } from "../theme/tokens";
 import { VOICES, type VoiceMeta } from "../lib/voiceSamples";
 
 interface Props {
@@ -32,7 +43,6 @@ export function VoicePicker({
 
   useEffect(() => {
     return () => {
-      // Cleanup on unmount — release any active player.
       playerRef.current?.release();
       playerRef.current = null;
     };
@@ -40,7 +50,6 @@ export function VoicePicker({
 
   const playSample = (voice: VoiceMeta) => {
     try {
-      // Release any currently-playing sample first.
       playerRef.current?.release();
       playerRef.current = null;
 
@@ -48,9 +57,6 @@ export function VoicePicker({
       playerRef.current = player;
       setPlayingId(voice.id);
 
-      // Detect when the sample finishes — flip the playing indicator off.
-      // Heuristic: status update where currentTime is within 100ms of duration,
-      // or where playing flipped to false after having loaded.
       const sub = player.addListener("playbackStatusUpdate", (status) => {
         const d = status.duration ?? 0;
         const t = status.currentTime ?? 0;
@@ -77,84 +83,158 @@ export function VoicePicker({
     }
   };
 
+  const canSubmit = !!picked && !submitting;
+
   return (
     <View style={styles.container}>
       <View style={styles.list}>
-        {VOICES.map((voice) => {
+        {VOICES.map((voice, i) => {
           const isPicked = picked === voice.id;
           const isPlaying = playingId === voice.id;
           return (
-            <TouchableOpacity
-              key={voice.id}
-              style={[styles.card, isPicked && styles.cardPicked]}
-              onPress={() => {
-                setPicked(voice.id);
-                playSample(voice);
-              }}
-              activeOpacity={0.85}
-            >
-              <View style={styles.cardBody}>
-                <Text style={styles.name}>{voice.name}</Text>
-                <Text style={styles.descriptor}>{voice.descriptor}</Text>
-              </View>
-              <View style={styles.playBadge}>
-                <Text style={styles.playBadgeText}>{isPlaying ? "▶︎" : "▶"}</Text>
-              </View>
-            </TouchableOpacity>
+            <View key={voice.id}>
+              {i > 0 && <View style={styles.divider} />}
+              <TouchableOpacity
+                style={styles.row}
+                onPress={() => {
+                  setPicked(voice.id);
+                  playSample(voice);
+                }}
+                activeOpacity={0.55}
+                accessibilityRole="button"
+                accessibilityLabel={`${voice.name} voice — ${voice.descriptor}`}
+                accessibilityState={{ selected: isPicked }}
+              >
+                <View
+                  style={[styles.rule, isPicked && styles.ruleActive]}
+                />
+                <View style={styles.body}>
+                  <Text
+                    style={isPicked ? styles.namePicked : styles.name}
+                  >
+                    {voice.name}
+                  </Text>
+                  <Text style={styles.descriptor}>{voice.descriptor}</Text>
+                </View>
+                {isPlaying ? (
+                  <Text style={styles.playing}>PLAYING</Text>
+                ) : (
+                  <Text style={styles.playGlyph}>▶</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           );
         })}
       </View>
 
       {helperText && <Text style={styles.helper}>{helperText}</Text>}
 
-      <TouchableOpacity
-        style={[styles.cta, (!picked || submitting) && styles.ctaDisabled]}
+      <Pressable
         onPress={handleSubmit}
-        disabled={!picked || submitting}
+        disabled={!canSubmit}
+        style={({ pressed }) => [
+          styles.cta,
+          !canSubmit && styles.ctaDisabled,
+          pressed && canSubmit && styles.ctaPressed,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={ctaLabel}
+        accessibilityState={{ disabled: !canSubmit }}
       >
-        {submitting ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.ctaText}>{ctaLabel}</Text>
-        )}
-      </TouchableOpacity>
+        <Text style={styles.ctaLabel}>
+          {submitting ? "Saving" : ctaLabel}
+        </Text>
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, gap: 16 },
-  list: { gap: 12 },
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1a1a1a",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
+  container: {
+    flex: 1,
+    gap: space.lg,
   },
-  cardPicked: { borderColor: "#6366f1", borderWidth: 2 },
-  cardBody: { flex: 1 },
-  name: { fontSize: 18, fontWeight: "600", color: "#fff", marginBottom: 4 },
-  descriptor: { fontSize: 14, color: "#aaa" },
-  playBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#2a2a2a",
-    alignItems: "center",
+  list: {
+    gap: 0,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: color.hairline,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: space.md,
+    paddingVertical: space.lg,
+  },
+  rule: {
+    width: 2,
+    alignSelf: "stretch",
+    backgroundColor: "transparent",
+    borderRadius: 1,
+  },
+  ruleActive: {
+    backgroundColor: color.accent,
+  },
+  body: {
+    flex: 1,
+    gap: space.xxs,
     justifyContent: "center",
   },
-  playBadgeText: { color: "#fff", fontSize: 14 },
-  helper: { fontSize: 13, color: "#888", textAlign: "center", marginTop: 8 },
-  cta: {
-    backgroundColor: "#6366f1",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    marginTop: "auto",
+  name: {
+    fontFamily: font.serifMedium,
+    fontSize: 19,
+    lineHeight: 26,
+    color: color.ink,
+    letterSpacing: -0.2,
   },
-  ctaDisabled: { opacity: 0.4 },
-  ctaText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  namePicked: {
+    fontFamily: font.serifSemiBold,
+    fontSize: 19,
+    lineHeight: 26,
+    color: color.ink,
+    letterSpacing: -0.2,
+  },
+  descriptor: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+  },
+  playGlyph: {
+    fontFamily: font.sansMedium,
+    fontSize: 14,
+    color: color.inkTertiary,
+    paddingTop: 4,
+  },
+  playing: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    color: color.accent,
+    paddingTop: 6,
+  },
+  helper: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    textAlign: "center",
+  },
+  cta: {
+    height: 56,
+    borderRadius: 999,
+    backgroundColor: color.accent,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  ctaPressed: {
+    opacity: 0.85,
+  },
+  ctaDisabled: {
+    backgroundColor: color.hairlineStrong,
+  },
+  ctaLabel: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 17,
+    color: color.paper,
+    letterSpacing: -0.1,
+  },
 });

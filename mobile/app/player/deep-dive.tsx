@@ -1,26 +1,40 @@
 // mobile/app/player/deep-dive.tsx
 /**
- * Deep Dive conversation screen — full-screen voice/text chat
- * with an ElevenLabs AI agent grounded in podcast research.
+ * Deep Dive conversation — paper-light editorial transcript with a quiet
+ * voice agent loaded from the podcast's research. User input is marked
+ * with a leading accent rule; AI replies sit in the open paper. No chat
+ * bubbles; reads like a printed interview.
  *
- * Navigated to from Player screen when user taps "Dive" on current chapter.
- * On end, returns to Player and resumes playback from saved position.
+ * Status, low-minutes, reconnecting, and speaking indicators are all
+ * single-line typographic affordances; no animated dots or waveforms.
+ *
+ * End-and-resume is a quiet link above the input dock, not a heavy CTA.
  */
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useDeepDive } from "../../src/hooks/useDeepDive";
 import { useSubscription } from "../../src/hooks/useSubscription";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
+import { color, font, layout, space, text } from "../../src/theme/tokens";
+
+function formatPosition(raw: string | undefined): string {
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 export default function DeepDiveScreen() {
   const { podcastId, chapterTitle, position } = useLocalSearchParams<{
@@ -46,23 +60,21 @@ export default function DeepDiveScreen() {
   const [textInput, setTextInput] = useState("");
   const scrollRef = useRef<ScrollView>(null);
 
-  // Start session on mount
   useEffect(() => {
     if (podcastId && chapterTitle) {
       startSession(podcastId, chapterTitle);
     }
+    // startSession is stable enough for mount-only behavior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [podcastId, chapterTitle]);
 
-  // Auto-scroll transcript
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [transcript]);
 
   const handleEnd = async () => {
     const result = await endSession();
-    if (result) {
-      refreshSubscription();
-    }
+    if (result) refreshSubscription();
     router.back();
   };
 
@@ -73,228 +85,348 @@ export default function DeepDiveScreen() {
     setTextInput("");
   };
 
-  // Loading state
+  const positionLabel = useMemo(() => formatPosition(position), [position]);
+
   if (status === "connecting") {
-    return <LoadingOverlay message="Connecting to researcher..." />;
+    return <LoadingOverlay message="Connecting to researcher" />;
   }
 
-  // Error state
   if (status === "error") {
     return (
-      <View style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorTitle}>Connection Failed</Text>
-          <Text style={styles.errorText}>{errorMessage}</Text>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backButtonText}>Back to Podcast</Text>
-          </TouchableOpacity>
+      <SafeAreaView
+        style={styles.root}
+        edges={["top", "left", "right", "bottom"]}
+      >
+        <View style={styles.errorBlock}>
+          <Text style={styles.errorTitle}>Couldn't connect</Text>
+          {errorMessage ? (
+            <Text style={styles.errorBody}>{errorMessage}</Text>
+          ) : null}
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={layout.hitSlop}
+            accessibilityRole="button"
+          >
+            <Text style={styles.errorAction}>Back to podcast</Text>
+          </Pressable>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    <SafeAreaView
+      style={styles.root}
+      edges={["top", "left", "right", "bottom"]}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.chapterContext} numberOfLines={1}>
-            Diving into: {chapterTitle}
-          </Text>
-        </View>
-        <Text style={[styles.minutesBadge, showWarning && styles.minutesWarning]}>
-          {minutesRemaining} min
-        </Text>
-      </View>
-
-      {/* Warning banner */}
-      {showWarning && (
-        <View style={styles.warningBanner}>
-          <Text style={styles.warningText}>
-            Less than 2 minutes remaining
-          </Text>
-        </View>
-      )}
-
-      {/* Reconnecting indicator */}
-      {status === "reconnecting" && (
-        <View style={styles.warningBanner}>
-          <Text style={styles.warningText}>
-            Connection lost. Reconnecting...
-          </Text>
-        </View>
-      )}
-
-      {/* Speaking indicator */}
-      {isSpeaking && (
-        <View style={styles.speakingIndicator}>
-          <Text style={styles.speakingText}>AI is speaking...</Text>
-        </View>
-      )}
-
-      {/* Transcript */}
-      <ScrollView
-        ref={scrollRef}
-        style={styles.transcript}
-        contentContainerStyle={styles.transcriptContent}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {transcript.map((entry, i) => (
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerEyebrow}>Diving into</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {chapterTitle}
+            </Text>
+          </View>
           <View
-            key={i}
             style={[
-              styles.bubble,
-              entry.role === "user" ? styles.userBubble : styles.assistantBubble,
+              styles.minutesBadge,
+              showWarning && styles.minutesBadgeWarning,
             ]}
           >
             <Text
               style={[
-                styles.bubbleText,
-                entry.role === "user" ? styles.userText : styles.assistantText,
+                styles.minutesText,
+                showWarning && styles.minutesTextWarning,
               ]}
             >
-              {entry.text}
+              {minutesRemaining} min
             </Text>
           </View>
-        ))}
-      </ScrollView>
-
-      {/* Input area */}
-      <View style={styles.inputArea}>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.textInput}
-            placeholder="Type a question..."
-            placeholderTextColor="#555"
-            value={textInput}
-            onChangeText={setTextInput}
-            onSubmitEditing={handleSendText}
-            returnKeyType="send"
-          />
-          <TouchableOpacity
-            style={styles.sendButton}
-            onPress={handleSendText}
-            disabled={!textInput.trim()}
-          >
-            <Text style={styles.sendText}>Send</Text>
-          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.endButton} onPress={handleEnd}>
-          <Text style={styles.endButtonText}>End & Resume Podcast</Text>
-        </TouchableOpacity>
+        {showWarning && (
+          <Text style={styles.statusLine}>Less than 2 minutes left.</Text>
+        )}
+        {status === "reconnecting" && (
+          <Text style={styles.statusLine}>Reconnecting…</Text>
+        )}
+
+        <ScrollView
+          ref={scrollRef}
+          style={styles.flex}
+          contentContainerStyle={styles.transcriptContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {transcript.length === 0 && (
+            <Text style={styles.transcriptHint}>
+              Ask anything about this chapter. The researcher has the full
+              source material loaded.
+            </Text>
+          )}
+
+          {transcript.map((entry, i) => (
+            <TranscriptEntry
+              key={i}
+              role={entry.role}
+              text={entry.text}
+              isLatest={i === transcript.length - 1}
+              showSpeaking={
+                isSpeaking &&
+                entry.role === "assistant" &&
+                i === transcript.length - 1
+              }
+            />
+          ))}
+        </ScrollView>
+
+        <View style={styles.dock}>
+          <Pressable
+            onPress={handleEnd}
+            hitSlop={layout.hitSlop}
+            accessibilityRole="button"
+            accessibilityLabel={`End and resume podcast at ${positionLabel}`}
+          >
+            <Text style={styles.endLink}>
+              End and resume podcast at {positionLabel}
+            </Text>
+          </Pressable>
+
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Type a question"
+              placeholderTextColor={color.inkTertiary}
+              value={textInput}
+              onChangeText={setTextInput}
+              onSubmitEditing={handleSendText}
+              returnKeyType="send"
+              multiline
+            />
+            <Pressable
+              onPress={handleSendText}
+              disabled={!textInput.trim()}
+              hitSlop={layout.hitSlop}
+              accessibilityRole="button"
+              accessibilityLabel="Send"
+            >
+              <Text
+                style={[
+                  styles.sendLabel,
+                  !textInput.trim() && styles.sendLabelDisabled,
+                ]}
+              >
+                Send
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+interface EntryProps {
+  role: "user" | "assistant";
+  text: string;
+  isLatest: boolean;
+  showSpeaking: boolean;
+}
+
+function TranscriptEntry({ role, text, showSpeaking }: EntryProps) {
+  if (role === "user") {
+    return (
+      <View style={styles.userEntry}>
+        <View style={styles.userRule} />
+        <Text style={styles.userText}>{text}</Text>
       </View>
-    </KeyboardAvoidingView>
+    );
+  }
+  return (
+    <View style={styles.aiEntry}>
+      <Text style={styles.aiText}>{text}</Text>
+      {showSpeaking && (
+        <Text style={styles.aiSpeakingLine}>Researcher is speaking…</Text>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  root: { flex: 1, backgroundColor: color.paper },
+  flex: { flex: 1 },
 
-  // Header
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 56,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
+    gap: space.base,
+    paddingHorizontal: space.xl,
+    paddingTop: space.sm,
+    paddingBottom: space.base,
   },
-  headerLeft: { flex: 1, marginRight: 12 },
-  chapterContext: { color: "#6366f1", fontSize: 15, fontWeight: "600" },
+  headerLeft: {
+    flex: 1,
+    gap: 2,
+  },
+  headerEyebrow: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    color: color.accent,
+  },
+  headerTitle: {
+    fontFamily: font.serifSemiBold,
+    fontSize: 18,
+    lineHeight: 24,
+    color: color.ink,
+    letterSpacing: -0.1,
+  },
   minutesBadge: {
-    color: "#6366f1",
-    fontSize: 14,
-    fontWeight: "700",
-    backgroundColor: "#6366f115",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: "hidden",
+    backgroundColor: color.accentSoft,
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+    borderRadius: 999,
   },
-  minutesWarning: { color: "#ff6b6b", backgroundColor: "#ff6b6b15" },
+  minutesBadgeWarning: {
+    backgroundColor: color.warningSoft,
+  },
+  minutesText: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 12,
+    color: color.accent,
+    letterSpacing: 0.3,
+  },
+  minutesTextWarning: {
+    color: color.warning,
+  },
 
-  // Warning banner
-  warningBanner: {
-    backgroundColor: "#ff6b6b20",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+  statusLine: {
+    ...text.bodySmall,
+    color: color.warning,
+    paddingHorizontal: space.xl,
+    paddingBottom: space.sm,
   },
-  warningText: { color: "#ff6b6b", fontSize: 13, textAlign: "center" },
 
-  // Transcript
-  transcript: { flex: 1 },
-  transcriptContent: { padding: 16, gap: 12 },
-  bubble: { maxWidth: "80%", padding: 12, borderRadius: 16 },
-  userBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: "#6366f1",
-    borderBottomRightRadius: 4,
+  transcriptContent: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.base,
+    paddingBottom: space.xxl,
+    gap: space.xl,
   },
-  assistantBubble: {
-    alignSelf: "flex-start",
-    backgroundColor: "#1a1a1a",
-    borderBottomLeftRadius: 4,
+  transcriptHint: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    fontFamily: font.serifRegular,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  bubbleText: { fontSize: 15, lineHeight: 22 },
-  userText: { color: "#fff" },
-  assistantText: { color: "#ddd" },
 
-  // Input
-  inputArea: {
+  userEntry: {
+    flexDirection: "row",
+    gap: space.md,
+    paddingLeft: 0,
+  },
+  userRule: {
+    width: 2,
+    alignSelf: "stretch",
+    backgroundColor: color.accent,
+    borderRadius: 1,
+  },
+  userText: {
+    flex: 1,
+    fontFamily: font.sansMedium,
+    fontSize: 15,
+    lineHeight: 22,
+    color: color.ink,
+  },
+
+  aiEntry: {
+    paddingLeft: space.md + 2,
+    gap: space.xs,
+  },
+  aiText: {
+    fontFamily: font.serifRegular,
+    fontSize: 17,
+    lineHeight: 26,
+    color: color.ink,
+  },
+  aiSpeakingLine: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: color.accent,
+    paddingTop: space.xs,
+  },
+
+  dock: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.md,
+    paddingBottom: space.sm,
     borderTopWidth: 1,
-    borderTopColor: "#1a1a1a",
-    padding: 16,
-    gap: 12,
+    borderTopColor: color.hairline,
+    gap: space.md,
   },
-  inputRow: { flexDirection: "row", gap: 8 },
+  endLink: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    textAlign: "center",
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: space.md,
+    paddingBottom: space.xs,
+  },
   textInput: {
     flex: 1,
-    backgroundColor: "#1a1a1a",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: "#fff",
+    fontFamily: font.sansRegular,
+    fontSize: 16,
+    lineHeight: 22,
+    color: color.ink,
+    minHeight: 36,
+    maxHeight: 120,
+    paddingVertical: space.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: color.hairlineStrong,
+    textAlignVertical: "top",
+  },
+  sendLabel: {
+    fontFamily: font.sansSemiBold,
     fontSize: 15,
+    color: color.accent,
+    letterSpacing: 0.1,
+    paddingBottom: space.sm + 2,
   },
-  sendButton: {
-    backgroundColor: "#6366f1",
-    borderRadius: 20,
-    paddingHorizontal: 16,
+  sendLabelDisabled: {
+    color: color.inkTertiary,
+  },
+
+  errorBlock: {
+    flex: 1,
+    paddingHorizontal: space.xxl,
     justifyContent: "center",
-  },
-  sendText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  endButton: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 12,
-    padding: 14,
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#333",
+    gap: space.base,
   },
-  endButtonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
-
-  // Speaking indicator
-  speakingIndicator: {
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    backgroundColor: "#6366f110",
+  errorTitle: {
+    fontFamily: font.serifSemiBold,
+    fontSize: 22,
+    color: color.ink,
+    textAlign: "center",
   },
-  speakingText: { color: "#6366f1", fontSize: 13, textAlign: "center" },
-
-  // Error
-  errorContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  errorTitle: { color: "#ff6b6b", fontSize: 20, fontWeight: "700", marginBottom: 8 },
-  errorText: { color: "#888", fontSize: 15, textAlign: "center", marginBottom: 24 },
-  backButton: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 12,
-    padding: 14,
-    paddingHorizontal: 24,
+  errorBody: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    textAlign: "center",
   },
-  backButtonText: { color: "#6366f1", fontSize: 15, fontWeight: "600" },
+  errorAction: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 15,
+    color: color.accent,
+    paddingTop: space.md,
+  },
 });

@@ -1,75 +1,129 @@
 // mobile/app/(tabs)/account.tsx
+/**
+ * Account — paper-light editorial settings page.
+ *
+ * Sections separated by hairlines, each with an uppercase Label eyebrow and
+ * a serif value line. No cards. Plan + Deep Dive minutes (paid only) +
+ * Voice. Three actions at the bottom: buy extra credit, upgrade (free only),
+ * sign out.
+ *
+ * SubscriptionModal and PaywallScreen still render in the legacy dark
+ * theme; they trigger from this screen's actions and are queued for a
+ * polish pass.
+ */
 import { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { Feather } from "@expo/vector-icons";
 import { useAuth } from "../../src/hooks/useAuth";
 import { useSubscription } from "../../src/hooks/useSubscription";
 import { useProfile } from "../../src/hooks/useProfile";
-import { CreditBalance } from "../../src/components/CreditBalance";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
 import { SubscriptionModal } from "../../src/components/SubscriptionModal";
 import { PaywallScreen } from "../../src/components/PaywallScreen";
+import { color, font, layout, space, text } from "../../src/theme/tokens";
 
 const CREDIT_PRICES: Record<string, number> = { free: 5, plus: 4, pro: 3 };
 
+const TIER_LABELS: Record<string, string> = {
+  free: "Free",
+  plus: "Plus",
+  pro: "Pro",
+};
+
+function capitalize(s: string | null | undefined): string {
+  if (!s) return "—";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function formatRenewalDate(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function Account() {
+  const router = useRouter();
   const { user, signOut } = useAuth();
   const { subscription, loading, refresh } = useSubscription();
-  const router = useRouter();
   const { profile } = useProfile();
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
 
-  if (loading) return <LoadingOverlay message="Loading account..." />;
+  if (loading) return <LoadingOverlay message="Loading account" />;
 
-  const creditPrice = CREDIT_PRICES[subscription?.tier || "free"];
-  const hasDeepDive = subscription && subscription.tier !== "free";
-
-  const handleBuyCredit = () => setShowCreditModal(true);
-  const handleUpgrade = () => setShowPaywall(true);
+  const tierLabel = TIER_LABELS[subscription?.tier ?? "free"];
+  const creditPrice = CREDIT_PRICES[subscription?.tier ?? "free"];
+  const credits = subscription?.creditsRemaining ?? 0;
+  const isFree = subscription?.tier === "free";
+  const hasDeepDive = !!subscription && subscription.tier !== "free";
+  const renewal = formatRenewalDate(subscription?.renewalDate ?? null);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.email}>{user?.email}</Text>
+    <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Account</Text>
+          {user?.email && <Text style={styles.email}>{user.email}</Text>}
+        </View>
 
-      {subscription && <CreditBalance subscription={subscription} />}
-
-      {hasDeepDive && (
-        <View style={styles.deepDiveCard}>
-          <Text style={styles.deepDiveLabel}>Deep Dive</Text>
-          <Text style={styles.deepDiveMinutes}>
-            {subscription.deepDiveMinutesRemaining} / {subscription.deepDiveMinutesPerMonth} min
+        <Section eyebrow="Plan">
+          <Text style={styles.sectionValue}>{tierLabel}</Text>
+          <Text style={styles.sectionMeta}>
+            {credits} {credits === 1 ? "credit" : "credits"} remaining
+            {renewal ? ` · resets ${renewal}` : ""}
           </Text>
-          {subscription.renewalDate && (
-            <Text style={styles.deepDiveRenewal}>
-              Resets {new Date(subscription.renewalDate).toLocaleDateString()}
+        </Section>
+
+        {hasDeepDive && subscription && (
+          <Section eyebrow="Deep Dive">
+            <Text style={styles.sectionValue}>
+              {subscription.deepDiveMinutesRemaining} of{" "}
+              {subscription.deepDiveMinutesPerMonth} minutes
             </Text>
+            {renewal && (
+              <Text style={styles.sectionMeta}>Resets {renewal}</Text>
+            )}
+          </Section>
+        )}
+
+        <NavRow
+          eyebrow="Voice"
+          value={capitalize(profile?.preferredVoice ?? null)}
+          onPress={() => router.push("/voice-settings")}
+        />
+
+        <View style={styles.actions}>
+          <OutlinePill
+            label={`Buy extra credit ($${creditPrice})`}
+            onPress={() => setShowCreditModal(true)}
+          />
+          {isFree && (
+            <FilledPill
+              label="Upgrade to Plus"
+              onPress={() => setShowPaywall(true)}
+            />
           )}
         </View>
-      )}
+      </ScrollView>
 
-      <TouchableOpacity style={styles.voiceRow} onPress={() => router.push("/voice-settings")}>
-        <Text style={styles.voiceLabel}>Voice</Text>
-        <Text style={styles.voiceValue}>
-          {profile?.preferredVoice
-            ? profile.preferredVoice.charAt(0).toUpperCase() + profile.preferredVoice.slice(1)
-            : "—"}
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.buyButton} onPress={handleBuyCredit}>
-        <Text style={styles.buyText}>Buy Extra Credit (${creditPrice})</Text>
-      </TouchableOpacity>
-
-      {subscription?.tier === "free" && (
-        <TouchableOpacity style={styles.upgradeButton} onPress={handleUpgrade}>
-          <Text style={styles.upgradeText}>Upgrade to Plus — $14.99/mo</Text>
-        </TouchableOpacity>
-      )}
-
-      <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
-        <Text style={styles.signOutText}>Sign Out</Text>
-      </TouchableOpacity>
+      <View style={styles.footer}>
+        <Pressable
+          onPress={signOut}
+          hitSlop={layout.hitSlop}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
+        >
+          <Text style={styles.signOut}>Sign out</Text>
+        </Pressable>
+      </View>
 
       <SubscriptionModal
         visible={showCreditModal}
@@ -80,54 +134,200 @@ export default function Account() {
       {showPaywall && (
         <PaywallScreen
           onClose={() => setShowPaywall(false)}
-          onPurchased={() => { setShowPaywall(false); refresh(); }}
+          onPurchased={() => {
+            setShowPaywall(false);
+            refresh();
+          }}
         />
       )}
+    </SafeAreaView>
+  );
+}
+
+interface SectionProps {
+  eyebrow: string;
+  children: React.ReactNode;
+}
+
+function Section({ eyebrow, children }: SectionProps) {
+  return (
+    <View>
+      <View style={styles.divider} />
+      <View style={styles.section}>
+        <Text style={styles.eyebrow}>{eyebrow}</Text>
+        {children}
+      </View>
     </View>
   );
 }
 
+interface NavRowProps {
+  eyebrow: string;
+  value: string;
+  onPress: () => void;
+}
+
+function NavRow({ eyebrow, value, onPress }: NavRowProps) {
+  return (
+    <View>
+      <View style={styles.divider} />
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${eyebrow}: ${value}`}
+        style={({ pressed }) => [styles.navRow, pressed && styles.navRowPressed]}
+      >
+        <View style={styles.navRowBody}>
+          <Text style={styles.eyebrow}>{eyebrow}</Text>
+          <Text style={styles.sectionValue}>{value}</Text>
+        </View>
+        <Feather name="chevron-right" size={20} color={color.inkSecondary} />
+      </Pressable>
+    </View>
+  );
+}
+
+interface PillProps {
+  label: string;
+  onPress: () => void;
+}
+
+function OutlinePill({ label, onPress }: PillProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.pillOutline,
+        pressed && styles.pillPressed,
+      ]}
+    >
+      <Text style={styles.pillOutlineLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function FilledPill({ label, onPress }: PillProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.pillFilled,
+        pressed && styles.pillPressed,
+      ]}
+    >
+      <Text style={styles.pillFilledLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a", padding: 24, gap: 16 },
-  email: { fontSize: 16, color: "#888", marginBottom: 8 },
-  deepDiveCard: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#6366f140",
+  root: {
+    flex: 1,
+    backgroundColor: color.paper,
   },
-  deepDiveLabel: { fontSize: 14, color: "#888", marginBottom: 4 },
-  deepDiveMinutes: { fontSize: 20, fontWeight: "700", color: "#6366f1" },
-  deepDiveRenewal: { fontSize: 12, color: "#555", marginTop: 4 },
-  voiceRow: {
+  flex: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: space.xl,
+    paddingBottom: space.xxxl,
+  },
+  header: {
+    paddingTop: space.lg,
+    paddingBottom: space.lg,
+    gap: space.xs,
+  },
+  title: {
+    ...text.displaySerif,
+  },
+  email: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: color.hairline,
+  },
+  section: {
+    paddingVertical: space.lg,
+    gap: space.xxs,
+  },
+  eyebrow: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    color: color.inkSecondary,
+    marginBottom: space.xs,
+  },
+  sectionValue: {
+    fontFamily: font.serifSemiBold,
+    fontSize: 19,
+    lineHeight: 26,
+    color: color.ink,
+    letterSpacing: -0.2,
+  },
+  sectionMeta: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+  },
+  navRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#1a1a1a",
-    borderRadius: 12,
-    padding: 16,
+    paddingVertical: space.lg,
+    gap: space.md,
+  },
+  navRowPressed: {
+    opacity: 0.55,
+  },
+  navRowBody: {
+    flex: 1,
+  },
+  actions: {
+    paddingTop: space.xxl,
+    gap: space.md,
+  },
+  pillOutline: {
+    height: 56,
+    borderRadius: 999,
+    backgroundColor: color.paper,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
-  },
-  voiceLabel: { fontSize: 16, color: "#fff" },
-  voiceValue: { fontSize: 16, color: "#888" },
-  buyButton: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#6366f1",
-  },
-  buyText: { color: "#6366f1", fontSize: 16, fontWeight: "600" },
-  upgradeButton: {
-    backgroundColor: "#6366f1",
-    borderRadius: 12,
-    padding: 16,
+    borderColor: color.accent,
+    justifyContent: "center",
     alignItems: "center",
   },
-  upgradeText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  signOutButton: { marginTop: "auto", padding: 16, alignItems: "center" },
-  signOutText: { color: "#ff6b6b", fontSize: 16 },
+  pillOutlineLabel: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 16,
+    color: color.accent,
+    letterSpacing: -0.1,
+  },
+  pillFilled: {
+    height: 56,
+    borderRadius: 999,
+    backgroundColor: color.accent,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pillFilledLabel: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 16,
+    color: color.paper,
+    letterSpacing: -0.1,
+  },
+  pillPressed: {
+    opacity: 0.85,
+  },
+  footer: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.md,
+    paddingBottom: space.lg,
+    alignItems: "center",
+  },
+  signOut: {
+    ...text.bodySmall,
+    color: color.warning,
+  },
 });

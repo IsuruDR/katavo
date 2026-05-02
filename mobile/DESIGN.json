@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-01T13:55:00.000Z",
+  "title": "Design System: Katavo",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "oklch(0.985 0.005 80)",
+        "tonalRamp": ["#1A1B1F", "#2F3133", "#4F5256", "#6F7378", "#8F9499", "#B5BABF", "#D9DBD3", "#F4EFE3"]
+      },
+      "paper-warm": {
+        "role": "neutral",
+        "displayName": "Aged Paper",
+        "canonical": "oklch(0.96 0.008 80)",
+        "tonalRamp": ["#1F1E18", "#34322B", "#54514A", "#74716A", "#96928A", "#B9B5AC", "#DAD5C7", "#F4EFE3"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.18 0.01 240)",
+        "tonalRamp": ["#0E0F12", "#1A1B1F", "#34363B", "#52555B", "#72757B", "#9296A0", "#B5B8C0", "#D8DAE0"]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "Smoke",
+        "canonical": "oklch(0.55 0.005 240)",
+        "tonalRamp": ["#1F2024", "#34363B", "#54565B", "#6F7176", "#84858C", "#A4A6AC", "#C7C8CC", "#E8E9EB"]
+      },
+      "ink-tertiary": {
+        "role": "neutral",
+        "displayName": "Pencil",
+        "canonical": "oklch(0.74 0.005 80)",
+        "tonalRamp": ["#252420", "#3D3C36", "#5C5A52", "#7C7A70", "#9C998E", "#B8B7B0", "#D5D3CB", "#EDECE5"]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Tea Stain",
+        "canonical": "oklch(0.92 0.005 80)",
+        "tonalRamp": ["#3B3A33", "#5A5950", "#7A786E", "#9C9A8E", "#BCBAAE", "#D9D7CB", "#E8E2D2", "#F4F1E5"]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Vellum",
+        "canonical": "oklch(0.86 0.008 80)",
+        "tonalRamp": ["#332F23", "#534E3E", "#73705F", "#94917F", "#B6B3A1", "#D2CFB7", "#D9D2BE", "#EAE5D2"]
+      },
+      "library-green": {
+        "role": "primary",
+        "displayName": "Library Green",
+        "canonical": "oklch(0.36 0.06 160)",
+        "tonalRamp": ["#0F1D17", "#162A21", "#1F3F30", "#2D5040", "#446956", "#688879", "#94AAA0", "#C8D5CF"]
+      },
+      "library-green-wash": {
+        "role": "primary",
+        "displayName": "Library Green Wash",
+        "canonical": "color-mix(in oklch, oklch(0.36 0.06 160) 8%, transparent)",
+        "tonalRamp": ["#2D5040", "#446956", "#688879", "#94AAA0", "#B7C5BD", "#D2DCD7", "#E5EAE7", "#EAEFEC"]
+      },
+      "brick-ink": {
+        "role": "tertiary",
+        "displayName": "Brick Ink",
+        "canonical": "oklch(0.50 0.10 30)",
+        "tonalRamp": ["#1F0F0B", "#37190F", "#562616", "#763221", "#8C4A3D", "#A66B5E", "#C8978A", "#E5C9C0"]
+      },
+      "brick-wash": {
+        "role": "tertiary",
+        "displayName": "Brick Wash",
+        "canonical": "color-mix(in oklch, oklch(0.50 0.10 30) 10%, transparent)",
+        "tonalRamp": ["#8C4A3D", "#A66B5E", "#C0907F", "#D2A99B", "#DDBCB1", "#E8CFC7", "#EFDDD7", "#F1E4E1"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page-anchoring titles. Topic on lock-screen artwork, Library section header, Generate prompt. One per screen."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Editorial workhorse. Library row titles, current chapter title, clarifying questions, mini-player and DiveBar topic line."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Primary UI text. Button labels, transcript user turns, navigation back link."
+      },
+      "body-small": {
+        "displayName": "Body Small",
+        "purpose": "Status, metadata, time readouts, secondary copy, captions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase eyebrow markers. NOW PLAYING, DIVE INTO, RESEARCHER IS SPEAKING. Typographic state, not heading."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "press-fast",
+        "value": "100ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Button press scale-down. Skip transport scales to 0.84, play scales to 0.92."
+      },
+      {
+        "name": "press-return",
+        "value": "150ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Button press scale-up after release. Slightly slower than press-down for tactile asymmetry."
+      },
+      {
+        "name": "transition-base",
+        "value": "150ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Default transition for state changes (chapter switch, status text crossfade, tap feedback)."
+      },
+      {
+        "name": "transition-slow",
+        "value": "300ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Color flash decay on skip transport label, longer state transitions."
+      },
+      {
+        "name": "ambient-breathing",
+        "value": "1600ms cubic-bezier(0.65, 0, 0.35, 1)",
+        "purpose": "Pulse opacity 0.4 ↔ 1 on in-flight row leading rule and on the LoadingOverlay hairline. Paused under prefers-reduced-motion."
+      },
+      {
+        "name": "reveal-stagger",
+        "value": "450ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Clarifying-form question reveal: opacity 0 to 1 with translateY 6px to 0, staggered 110ms per index."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary CTA",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Accent-filled pill anchored at the bottom of single-action screens. Generate, Generate-podcast, paywall CTA.",
+      "html": "<button class=\"ds-btn-primary\">Generate</button>",
+      "css": ".ds-btn-primary { background: #2D5040; color: #FBF8F1; height: 56px; padding: 0 24px; border-radius: 999px; border: none; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 16px; font-weight: 600; letter-spacing: -0.1px; cursor: pointer; transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-primary:hover { opacity: 0.92; } .ds-btn-primary:active { opacity: 0.85; transform: scale(0.99); transition-duration: 100ms; }"
+    },
+    {
+      "name": "Play Button",
+      "kind": "button",
+      "refersTo": "button-play",
+      "description": "Audio dock primary control. 64px Library Green disc with paper triangle. Optical-aligns the icon by 2px right.",
+      "html": "<button class=\"ds-btn-play\" aria-label=\"Play\"><svg viewBox=\"0 0 24 24\" width=\"26\" height=\"26\" fill=\"none\" stroke=\"#FBF8F1\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"5 3 19 12 5 21 5 3\"></polygon></svg></button>",
+      "css": ".ds-btn-play { width: 64px; height: 64px; border-radius: 999px; background: #2D5040; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-play svg { margin-left: 2px; } .ds-btn-play:active { transform: scale(0.92); transition-duration: 100ms; }"
+    },
+    {
+      "name": "Skip Transport",
+      "kind": "button",
+      "refersTo": "button-skip",
+      "description": "Pure typographic skip control. Press scales to 0.84, color flashes from ink to Library Green, then decays.",
+      "html": "<button class=\"ds-btn-skip\" aria-label=\"Skip back ten seconds\">−10</button>",
+      "css": ".ds-btn-skip { background: transparent; border: none; padding: 12px; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 22px; font-weight: 600; color: #1A1B1F; font-variant-numeric: tabular-nums; letter-spacing: -0.2px; cursor: pointer; transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), color 300ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-skip:active { transform: scale(0.84); color: #2D5040; transition-duration: 100ms; } .ds-btn-skip:disabled { opacity: 0.3; cursor: default; }"
+    },
+    {
+      "name": "Minutes Badge",
+      "kind": "chip",
+      "refersTo": "chip-minutes",
+      "description": "Library Green wash pill with Library Green label. Surfaces remaining deep-dive minutes on player and Deep Dive screens.",
+      "html": "<span class=\"ds-chip-minutes\">12 min</span>",
+      "css": ".ds-chip-minutes { display: inline-block; background: rgba(45, 80, 64, 0.08); color: #2D5040; padding: 4px 12px; border-radius: 999px; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.3px; }"
+    },
+    {
+      "name": "Bottom-Rule Input",
+      "kind": "input",
+      "refersTo": "input-bottom-rule",
+      "description": "Multi-line text field with hairline-only bottom border. No surrounding background, no focus ring; cursor and keyboard signal focus.",
+      "html": "<textarea class=\"ds-input\" placeholder=\"the impact of quantum computing on cryptography\" rows=\"3\"></textarea>",
+      "css": ".ds-input { width: 100%; background: #FBF8F1; color: #1A1B1F; padding: 8px 0; border: none; border-bottom: 1px solid #D9D2BE; font-family: 'IBM Plex Serif', Georgia, serif; font-size: 22px; font-weight: 500; line-height: 30px; resize: none; outline: none; } .ds-input::placeholder { color: #B8B7B0; }"
+    },
+    {
+      "name": "Podcast Row",
+      "kind": "list-item",
+      "refersTo": "row-podcast",
+      "description": "Library entry. Editorial serif title above metadata line. In-flight rows get a 2px Library Green leading rule that pulses; failed rows get a static Brick rule; complete rows have no rule.",
+      "html": "<a class=\"ds-row\" href=\"#\"><div class=\"ds-row-rule\" data-state=\"working\"></div><div class=\"ds-row-body\"><h3 class=\"ds-row-topic\">The impact of quantum computing on cryptography</h3><p class=\"ds-row-meta\">Researching · 2m 14s</p></div></a>",
+      "css": ".ds-row { display: flex; gap: 12px; padding: 20px 0; text-decoration: none; align-items: stretch; } .ds-row-rule { width: 2px; align-self: stretch; border-radius: 1px; background: transparent; } .ds-row-rule[data-state=\"working\"] { background: #2D5040; animation: ds-pulse 1600ms cubic-bezier(0.65, 0, 0.35, 1) infinite; } .ds-row-rule[data-state=\"failed\"] { background: #8C4A3D; } .ds-row-body { flex: 1; display: flex; flex-direction: column; gap: 4px; } .ds-row-topic { margin: 0; font-family: 'IBM Plex Serif', Georgia, serif; font-size: 17px; font-weight: 600; color: #1A1B1F; line-height: 24px; } .ds-row-meta { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; color: #84858C; } @keyframes ds-pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } } @media (prefers-reduced-motion: reduce) { .ds-row-rule[data-state=\"working\"] { animation: none; opacity: 1; } }"
+    },
+    {
+      "name": "Mini Player",
+      "kind": "nav",
+      "refersTo": "bar-mini-player",
+      "description": "Persistent paper bar above the tab bar showing the currently-loaded podcast. Tap bar to expand to full player; tap circle to toggle playback.",
+      "html": "<div class=\"ds-mini\"><div class=\"ds-mini-body\"><span class=\"ds-mini-eyebrow\">Now playing</span><span class=\"ds-mini-topic\">Emerging AI in software engineering</span></div><button class=\"ds-mini-play\" aria-label=\"Pause\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"#FBF8F1\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\"></rect><rect x=\"14\" y=\"4\" width=\"4\" height=\"16\"></rect></svg></button></div>",
+      "css": ".ds-mini { display: flex; align-items: center; gap: 16px; padding: 12px 24px; background: #FBF8F1; border-top: 1px solid #E8E2D2; } .ds-mini-body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; } .ds-mini-eyebrow { font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 10px; font-weight: 600; color: #2D5040; letter-spacing: 0.8px; text-transform: uppercase; } .ds-mini-topic { font-family: 'IBM Plex Serif', Georgia, serif; font-size: 15px; font-weight: 600; color: #1A1B1F; line-height: 20px; letter-spacing: -0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-mini-play { width: 36px; height: 36px; border-radius: 999px; background: #2D5040; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }"
+    },
+    {
+      "name": "Dive Bar",
+      "kind": "custom",
+      "refersTo": "bar-dive",
+      "description": "Persistent CTA between chapter list and audio dock. Eyebrow + current chapter title + 40px Library Green arrow circle that echoes the play button.",
+      "html": "<button class=\"ds-dive\"><div class=\"ds-dive-body\"><span class=\"ds-dive-eyebrow\">Dive into</span><span class=\"ds-dive-title\">Emerging AI Technologies in Software Engineering</span></div><div class=\"ds-dive-circle\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"#FBF8F1\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"5\" y1=\"12\" x2=\"19\" y2=\"12\"></line><polyline points=\"12 5 19 12 12 19\"></polyline></svg></div></button>",
+      "css": ".ds-dive { display: flex; align-items: center; gap: 16px; width: 100%; padding: 16px 24px; background: #FBF8F1; border: none; border-top: 1px solid #E8E2D2; cursor: pointer; text-align: left; } .ds-dive-body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; } .ds-dive-eyebrow { font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 11px; font-weight: 600; color: #2D5040; letter-spacing: 0.8px; text-transform: uppercase; } .ds-dive-title { font-family: 'IBM Plex Serif', Georgia, serif; font-size: 16px; font-weight: 600; color: #1A1B1F; line-height: 22px; letter-spacing: -0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-dive-circle { width: 40px; height: 40px; border-radius: 999px; background: #2D5040; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }"
+    },
+    {
+      "name": "Loading Overlay",
+      "kind": "custom",
+      "refersTo": "loading-overlay",
+      "description": "Typographic full-screen loading state. Optional ink-secondary message above a 56px Library Green hairline that breathes opacity 0.4 to 1 over 1.6 seconds.",
+      "html": "<div class=\"ds-loading\"><p class=\"ds-loading-msg\">Reading your topic</p><div class=\"ds-loading-rule\"></div></div>",
+      "css": ".ds-loading { position: absolute; inset: 0; background: #FBF8F1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 0 32px; } .ds-loading-msg { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 16px; color: #84858C; text-align: center; } .ds-loading-rule { width: 56px; height: 1px; background: #2D5040; animation: ds-breathe 1600ms cubic-bezier(0.65, 0, 0.35, 1) infinite; } @keyframes ds-breathe { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } } @media (prefers-reduced-motion: reduce) { .ds-loading-rule { animation: none; opacity: 1; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Margin Note",
+    "overview": "Katavo's interface is a pocket-sized printed page. The primary surface is warm paper, type carries the page, and the only persistent ornament is a single ink-stamp green rule used to mark the user's voice, the active row, the call to action. Every screen reads like a stamped, well-edited fragment of a notebook: nothing decorative, nothing announcing itself, but everything precisely placed. Density is deliberately low. Whitespace and rhythm carry hierarchy more than weight or color. We trust the topic and the chapter list to do the talking; the chrome stays out of the way. When the user opens a podcast, the page should feel less like an app screen and more like the book it could have been.",
+    "keyCharacteristics": [
+      "Warm paper everywhere. Never #fff, never grey-blue.",
+      "Editorial Plex Serif for content type. Plex Sans for UI.",
+      "Single ink-stamp green accent at less than 10% of any surface.",
+      "Hairline rules and spacing rhythm, not card backgrounds.",
+      "Typographic state, not iconographic state. Status reads in the type.",
+      "Light theme only. Dark mode is not in scope."
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "The accent is used on no more than 10% of any rendered screen. Its rarity is the point. If a designer is tempted to add a second accent, the answer is to remove an existing one.", "section": "colors" },
+      { "name": "The Paper Rule", "body": "Surfaces are never #fff. Backgrounds are always Warm Paper. Off-paper neutrals (cards, modals) drift toward Aged Paper, never toward grey or blue.", "section": "colors" },
+      { "name": "The Status-In-Type Rule", "body": "State is conveyed through type weight, color, and position, not through icons or backgrounds. A failed row is type-only Brick Ink. A working row is type-only Smoke with a 2px Library Green leading rule. No badges, no dots, no icons.", "section": "colors" },
+      { "name": "The Two-Family Rule", "body": "Two type families and only two. A Plex variant is the answer; a third typeface is not.", "section": "typography" },
+      { "name": "The Serif-For-Content Rule", "body": "Topic titles, chapter titles, transcript responses from the researcher all use Plex Serif. UI chrome (buttons, time stamps, status, navigation) uses Plex Sans. The serif is the sound of the user's curiosity and the agent's reply; the sans is the frame around them.", "section": "typography" },
+      { "name": "The Tabular-Numerals Rule", "body": "Any digit that appears in a row alongside other digits gets font-variant: tabular-nums. Timestamps, durations, X min, X chapters all align across rows.", "section": "typography" },
+      { "name": "The No-Shadow Rule", "body": "Shadows do not exist in this system. Surfaces meet via spacing or hairline rules, never via diffuse drop shadows or glassmorphism.", "section": "elevation" },
+      { "name": "The Hairline-Or-Whitespace Rule", "body": "When two regions need to feel distinct, they get a 1px hairline divider in Tea Stain, OR they get spacing that does the same job. Never both. Never a panel.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Warm Paper (#FBF8F1) as the background of every screen. Never #fff.",
+      "Do reserve Library Green for the play button, the current-chapter accent, the Dive affordance, the user's leading rule, and the primary CTA fill. Nothing else.",
+      "Do use Plex Serif for content type (topics, chapter titles, transcript researcher replies) and Plex Sans for UI chrome (buttons, time stamps, navigation).",
+      "Do convey state through the type itself. Status text in Smoke, in flight gets a Library Green leading rule that pulses, complete uses default ink, failed uses Brick Ink.",
+      "Do use 1px hairlines (Tea Stain at default, Vellum on inputs and skeletons) when separation is needed. Or use spacing rhythm. Never both.",
+      "Do anchor primary CTAs to the bottom of the screen. The screen's reading flows top-to-bottom; the action belongs at the end of the read.",
+      "Do apply font-variant: tabular-nums to any digit that appears alongside another digit.",
+      "Do ease motion out with exponential curves (ease-out-quart). Press feedback is 100ms in, 150ms out. Ambient breathing is 1.6 seconds. Reduced motion is honored everywhere."
+    ],
+    "donts": [
+      "Don't use the legacy dark theme with the indigo #6366f1 accent. That treatment is the explicit anti-reference.",
+      "Don't copy NotebookLM's commodity Google-product look. Generic AI tool aesthetics are forbidden.",
+      "Don't use ChatGPT-style chat bubbles for the Deep Dive transcript or anywhere else. Transcripts read like printed interviews, with a leading rule on user turns and serif type for the agent.",
+      "Don't drift toward Headspace / Calm wellness aesthetics. No pastel gradients, no illustrated mascots, no floaty type.",
+      "Don't copy podcast-platform color tells. Spotify green, Apple Podcasts purple, Pocket Casts orange are all forbidden. We are not a podcast platform.",
+      "Don't use card-on-card density. The Audible audiobook-store look is the inverse of this system.",
+      "Don't add box-shadow, glassmorphism, or any decorative blur effect.",
+      "Don't use side-stripe borders as accents, except the explicit signature 2px Library Green leading rule on rows and transcript turns. That's the one exception, and it earns it.",
+      "Don't use background-clip: text for gradient text. Emphasis lives in weight, size, and position, not gradients.",
+      "Don't use em dashes in copy. Use commas, colons, semicolons, periods, or parentheses.",
+      "Don't add a third type family. Two Plex variants, that's it.",
+      "Don't use #000 or #fff anywhere in the code. The neutral system is tinted toward warm paper.",
+      "Don't ship icons in inactive states. The tab bar always shows icons; the play button always shows its glyph; the rest of the UI is type-led."
+    ]
+  }
+}

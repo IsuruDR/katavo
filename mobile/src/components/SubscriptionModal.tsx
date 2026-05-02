@@ -1,12 +1,24 @@
 // mobile/src/components/SubscriptionModal.tsx
 /**
- * SubscriptionModal — modal for purchasing extra credits.
- * Shows tier-specific pricing.
+ * Buy-extra-credit bottom sheet.
+ *
+ * Paper-light sheet sliding up from below. Editorial price block, single
+ * accent CTA, quiet text-link cancel. Tier-aware pricing comes from the
+ * caller; we only display.
  */
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal } from "react-native";
-import { purchaseCredit } from "../services/revenucat";
 import { useState } from "react";
+import {
+  Alert,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadingOverlay } from "./LoadingOverlay";
+import { purchaseCredit } from "../services/revenucat";
+import { color, font, layout, space, text } from "../theme/tokens";
 
 interface Props {
   visible: boolean;
@@ -17,7 +29,12 @@ interface Props {
 
 const PRICES: Record<string, number> = { free: 5, plus: 4, pro: 3 };
 
-export function SubscriptionModal({ visible, tier, onClose, onPurchased }: Props) {
+export function SubscriptionModal({
+  visible,
+  tier,
+  onClose,
+  onPurchased,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const price = PRICES[tier];
 
@@ -29,7 +46,7 @@ export function SubscriptionModal({ visible, tier, onClose, onPurchased }: Props
       onClose();
     } catch (error: any) {
       if (!error.userCancelled) {
-        Alert.alert("Purchase Failed", error.message);
+        Alert.alert("Couldn't complete purchase", error.message);
       }
     } finally {
       setLoading(false);
@@ -37,43 +54,155 @@ export function SubscriptionModal({ visible, tier, onClose, onPurchased }: Props
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
-        {loading && <LoadingOverlay message="Processing..." />}
-        <View style={styles.modal}>
-          <Text style={styles.title}>Buy Extra Credit</Text>
-          <Text style={styles.subtitle}>Generate one additional podcast</Text>
-
-          <View style={styles.priceBox}>
-            <Text style={styles.price}>${price}</Text>
-            <Text style={styles.perCredit}>per credit</Text>
+        <Pressable style={styles.scrim} onPress={onClose} />
+        {loading && <LoadingOverlay message="Processing" />}
+        <SafeAreaView
+          style={styles.sheet}
+          edges={["left", "right", "bottom"]}
+        >
+          <View style={styles.grabRow}>
+            <View style={styles.grab} />
           </View>
 
-          <TouchableOpacity style={styles.buyButton} onPress={handleBuy}>
-            <Text style={styles.buyText}>Purchase for ${price}</Text>
-          </TouchableOpacity>
+          <View style={styles.body}>
+            <Text style={styles.eyebrow}>Buy extra credit</Text>
+            <Text style={styles.title}>One more podcast</Text>
+            <Text style={styles.subtitle}>
+              Adds a single credit to your account. Use it any time.
+            </Text>
 
-          <TouchableOpacity onPress={onClose}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={styles.priceBlock}>
+              <Text style={styles.price}>${price}</Text>
+              <Text style={styles.priceMeta}>per credit</Text>
+            </View>
+          </View>
+
+          <View style={styles.footer}>
+            <Pressable
+              onPress={handleBuy}
+              style={({ pressed }) => [
+                styles.cta,
+                pressed && styles.ctaPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Buy one credit for ${price} dollars`}
+            >
+              <Text style={styles.ctaLabel}>Buy for ${price}</Text>
+            </Pressable>
+            <Pressable
+              onPress={onClose}
+              hitSlop={layout.hitSlop}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+            >
+              <Text style={styles.cancel}>Cancel</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
-  modal: {
-    backgroundColor: "#1a1a1a", borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, gap: 16,
+  overlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(26, 27, 31, 0.45)",
   },
-  title: { fontSize: 22, fontWeight: "700", color: "#fff", textAlign: "center" },
-  subtitle: { fontSize: 14, color: "#888", textAlign: "center" },
-  priceBox: { alignItems: "center", paddingVertical: 16 },
-  price: { fontSize: 48, fontWeight: "700", color: "#6366f1" },
-  perCredit: { fontSize: 14, color: "#888" },
-  buyButton: { backgroundColor: "#6366f1", borderRadius: 12, padding: 16, alignItems: "center" },
-  buyText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  cancelText: { color: "#888", textAlign: "center", fontSize: 16 },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  sheet: {
+    backgroundColor: color.paper,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: space.xl,
+  },
+  grabRow: {
+    alignItems: "center",
+    paddingTop: space.md,
+    paddingBottom: space.sm,
+  },
+  grab: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: color.hairlineStrong,
+  },
+  body: {
+    paddingTop: space.base,
+    paddingBottom: space.lg,
+    gap: space.xs,
+  },
+  eyebrow: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    color: color.accent,
+    marginBottom: space.xs,
+  },
+  title: {
+    ...text.displaySerif,
+    fontSize: 28,
+    lineHeight: 34,
+  },
+  subtitle: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    marginTop: space.xs,
+  },
+  priceBlock: {
+    paddingTop: space.lg,
+    alignItems: "flex-start",
+  },
+  price: {
+    fontFamily: font.serifBold,
+    fontSize: 56,
+    lineHeight: 60,
+    color: color.ink,
+    letterSpacing: -1.5,
+    fontVariant: ["tabular-nums"],
+  },
+  priceMeta: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    marginTop: space.xs,
+  },
+  footer: {
+    paddingTop: space.base,
+    paddingBottom: space.base,
+    gap: space.md,
+    alignItems: "center",
+  },
+  cta: {
+    width: "100%",
+    height: 56,
+    borderRadius: 999,
+    backgroundColor: color.accent,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  ctaPressed: {
+    opacity: 0.85,
+  },
+  ctaLabel: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 17,
+    color: color.paper,
+    letterSpacing: -0.1,
+  },
+  cancel: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    paddingVertical: space.sm,
+  },
 });

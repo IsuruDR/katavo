@@ -1,7 +1,15 @@
-import { View, Text, StyleSheet } from "react-native";
+/**
+ * Onboarding step 2 — voice pick.
+ *
+ * Editorial paper page wrapping the reusable VoicePicker. Tap a voice to
+ * hear a sample, tap Continue to persist and advance.
+ */
+import { StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { VoicePicker } from "../../src/components/VoicePicker";
 import { useProfile } from "../../src/hooks/useProfile";
+import { color, space, text } from "../../src/theme/tokens";
 
 export default function VoiceOnboarding() {
   const router = useRouter();
@@ -13,18 +21,46 @@ export default function VoiceOnboarding() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Pick your voice</Text>
-      <Text style={styles.subtitle}>
-        Tap a voice to hear a sample. You can change this later in your account.
-      </Text>
-      <VoicePicker onSelect={handleSelect} ctaLabel="Continue" />
-    </View>
+    <SafeAreaView
+      style={styles.root}
+      edges={["top", "left", "right", "bottom"]}
+    >
+      <View style={styles.header}>
+        <Text style={styles.title}>Pick your voice</Text>
+        <Text style={styles.subtitle}>
+          Tap one to hear a sample. You can change it later in your account.
+        </Text>
+      </View>
+      <View style={styles.body}>
+        <VoicePicker onSelect={handleSelect} ctaLabel="Continue" />
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a", padding: 24, gap: 12 },
-  title: { fontSize: 28, fontWeight: "700", color: "#fff" },
-  subtitle: { fontSize: 14, color: "#aaa", marginBottom: 12 },
+  root: {
+    flex: 1,
+    backgroundColor: color.paper,
+  },
+  header: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.lg,
+    paddingBottom: space.base,
+    gap: space.xs,
+  },
+  title: {
+    ...text.displaySerif,
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  subtitle: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: space.xl,
+    paddingBottom: space.lg,
+  },
 });

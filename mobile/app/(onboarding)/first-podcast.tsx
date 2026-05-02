@@ -89,10 +89,10 @@ export default function FirstPodcast() {
   };
 
   if (phase === "loading-questions") {
-    return <LoadingOverlay message="Reading your topic..." />;
+    return <LoadingOverlay message="Reading your topic" />;
   }
   if (phase === "submitting") {
-    return <LoadingOverlay message="Starting generation..." />;
+    return <LoadingOverlay message="Sending your topic to research" />;
   }
 
   if (phase === "clarifying") {
@@ -120,7 +120,7 @@ export default function FirstPodcast() {
 
           <Text style={styles.headline}>Your first podcast</Text>
           <Text style={styles.subtitle}>
-            Here's a topic to start with — or write your own.
+            Here's a topic to start with, or write your own.
           </Text>
 
           <TextInput
@@ -152,7 +152,7 @@ export default function FirstPodcast() {
             accessibilityLabel="Generate podcast"
             accessibilityState={{ disabled: !canTap }}
           >
-            <Text style={styles.submitLabel}>Generate podcast (1 credit)</Text>
+            <Text style={styles.submitLabel}>Generate</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
