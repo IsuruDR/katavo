@@ -70,10 +70,12 @@ export default function Welcome() {
         <View style={styles.body}>
           <Text style={styles.eyebrow}>Katavo</Text>
           <View style={styles.lines}>
-            <Text style={styles.headline}>Pick a topic.</Text>
-            <Text style={styles.headline}>Get a 10-minute podcast.</Text>
+            <Text style={styles.headline}>Your curiosity,</Text>
+            <Text style={styles.headline}>voiced.</Text>
           </View>
-          <Text style={styles.subline}>No scripts. No editing.</Text>
+          <Text style={styles.subline}>
+            Pick a topic. Hear a 10-minute podcast on it.
+          </Text>
         </View>
 
         <View style={styles.footer}>
