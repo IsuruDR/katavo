@@ -13,6 +13,7 @@ export interface PodcastRow {
   topic: string;
   status: string;
   audio_url: string | null;
+  cover_url: string | null;
   duration_seconds: number | null;
   chapter_markers: Array<{ timestampSeconds: number; title: string }>;
   has_ads: boolean;
@@ -27,6 +28,7 @@ export interface Podcast {
   topic: string;
   status: string;
   audioUrl: string | null;
+  coverUrl: string | null;
   durationSeconds: number | null;
   chapterMarkers: Array<{ timestampSeconds: number; title: string }>;
   hasAds: boolean;
@@ -41,6 +43,7 @@ export function toPodcast(row: PodcastRow): Podcast {
     topic: row.topic,
     status: row.status,
     audioUrl: row.audio_url,
+    coverUrl: row.cover_url,
     durationSeconds: row.duration_seconds,
     chapterMarkers: (row.chapter_markers ?? []).map((ch) => ({
       timestampSeconds: ch.timestampSeconds,

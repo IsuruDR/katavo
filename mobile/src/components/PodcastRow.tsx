@@ -25,6 +25,7 @@ import { useRouter } from "expo-router";
 import type { Podcast } from "../hooks/usePodcasts";
 import { color, motion, space, text } from "../theme/tokens";
 import { formatStageDuration, getStatusMeta } from "../lib/podcastStatus";
+import { usePlayingPodcast } from "../state/PlayingPodcastContext";
 
 interface Props {
   podcast: Podcast;
@@ -53,6 +54,7 @@ function formatRelativeDate(iso: string | null | undefined): string {
 
 export function PodcastRow({ podcast }: Props) {
   const router = useRouter();
+  const { load } = usePlayingPodcast();
   const meta = getStatusMeta(podcast.status);
   const isReady = podcast.status === "complete";
   const isFailed = podcast.status === "failed";
@@ -106,6 +108,19 @@ export function PodcastRow({ podcast }: Props) {
 
   const handlePress = () => {
     if (isReady) {
+      // Fire-and-forget so audio starts loading immediately while we
+      // navigate. By the time the player screen mounts, the track is
+      // already prepared in the global context.
+      if (podcast.audioUrl) {
+        load({
+          id: podcast.id,
+          topic: podcast.topic,
+          audioUrl: podcast.audioUrl,
+          coverUrl: podcast.coverUrl,
+          durationSeconds: podcast.durationSeconds,
+          chapterMarkers: podcast.chapterMarkers ?? [],
+        });
+      }
       router.push(`/player/${podcast.id}`);
     } else if (isFailed) {
       router.push("/(tabs)/generate");

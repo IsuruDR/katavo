@@ -28,12 +28,18 @@ export async function setupPlayer() {
   isSetup = true;
 }
 
-export async function loadTrack(id: string, url: string, title: string) {
+export async function loadTrack(
+  id: string,
+  url: string,
+  title: string,
+  artwork?: string | null,
+) {
   await TrackPlayer.reset();
   await TrackPlayer.add({
     id,
     url,
     title,
     artist: "Katavo",
+    ...(artwork ? { artwork } : {}),
   });
 }

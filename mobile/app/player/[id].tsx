@@ -30,6 +30,7 @@ import {
   type Podcast,
   type PodcastRow,
 } from "../../src/hooks/usePodcasts";
+import { usePlayingPodcast } from "../../src/state/PlayingPodcastContext";
 import { color, font, layout, space, text } from "../../src/theme/tokens";
 
 export default function PlayerScreen() {
@@ -38,6 +39,7 @@ export default function PlayerScreen() {
   const [podcast, setPodcast] = useState<Podcast | null>(null);
   const [loading, setLoading] = useState(true);
   const { subscription } = useSubscription();
+  const { current, ready, load } = usePlayingPodcast();
 
   useEffect(() => {
     (async () => {
@@ -51,11 +53,23 @@ export default function PlayerScreen() {
     })();
   }, [id]);
 
-  const player = usePlayer(
-    podcast?.id || "",
-    podcast?.audioUrl || "",
-    podcast?.topic || "",
-  );
+  // Hand the podcast to the global context once we have it. If it's already
+  // the loaded track (e.g. user came in from the mini-player), context.load
+  // is a no-op and playback position is preserved.
+  useEffect(() => {
+    if (!podcast?.audioUrl) return;
+    load({
+      id: podcast.id,
+      topic: podcast.topic,
+      audioUrl: podcast.audioUrl,
+      coverUrl: podcast.coverUrl,
+      durationSeconds: podcast.durationSeconds,
+      chapterMarkers: podcast.chapterMarkers ?? [],
+    });
+  }, [podcast?.id, podcast?.audioUrl, load]);
+
+  const player = usePlayer();
+  const isCurrentTrack = current?.id === podcast?.id;
 
   const isPaidTier =
     !!subscription &&
@@ -93,7 +107,9 @@ export default function PlayerScreen() {
   }, [diveLocked, player, podcast, currentChapter, router]);
 
   if (loading || !podcast) return <LoadingOverlay message="Loading podcast" />;
-  if (!player.ready) return <LoadingOverlay message="Preparing audio" />;
+  if (!isCurrentTrack || !ready) {
+    return <LoadingOverlay message="Preparing audio" />;
+  }
 
   const totalMinutes = Math.max(
     1,

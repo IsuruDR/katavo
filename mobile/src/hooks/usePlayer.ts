@@ -1,34 +1,33 @@
 // mobile/src/hooks/usePlayer.ts
-import { useState, useEffect, useCallback } from "react";
-import TrackPlayer, { useProgress, State, usePlaybackState } from "react-native-track-player";
-import { setupPlayer, loadTrack } from "../services/player";
+/**
+ * usePlayer — transport controls + live progress for whatever's currently
+ * loaded in TrackPlayer. Loading is owned by PlayingPodcastContext now,
+ * so this hook is purely a view into the singleton player state.
+ */
+import { useCallback } from "react";
+import TrackPlayer, {
+  State,
+  usePlaybackState,
+  useProgress,
+} from "react-native-track-player";
 
 const SKIP_INTERVAL_SECONDS = 10;
 
-export function usePlayer(podcastId: string, audioUrl: string, title: string) {
-  const [ready, setReady] = useState(false);
+export function usePlayer() {
   const progress = useProgress();
   const playbackState = usePlaybackState();
 
-  useEffect(() => {
-    if (!podcastId || !audioUrl) return;
+  const play = useCallback(async () => {
+    await TrackPlayer.play();
+  }, []);
 
-    let cancelled = false;
-    (async () => {
-      await setupPlayer();
-      await loadTrack(podcastId, audioUrl, title);
-      if (!cancelled) setReady(true);
-    })();
+  const pause = useCallback(async () => {
+    await TrackPlayer.pause();
+  }, []);
 
-    return () => {
-      cancelled = true;
-      TrackPlayer.reset();
-    };
-  }, [podcastId, audioUrl, title]);
-
-  const play = useCallback(async () => { await TrackPlayer.play(); }, []);
-  const pause = useCallback(async () => { await TrackPlayer.pause(); }, []);
-  const seekTo = useCallback(async (seconds: number) => { await TrackPlayer.seekTo(seconds); }, []);
+  const seekTo = useCallback(async (seconds: number) => {
+    await TrackPlayer.seekTo(seconds);
+  }, []);
 
   const skipBack = useCallback(async () => {
     const { position } = await TrackPlayer.getProgress();
@@ -44,7 +43,6 @@ export function usePlayer(podcastId: string, audioUrl: string, title: string) {
   const isPlaying = playbackState.state === State.Playing;
 
   return {
-    ready,
     isPlaying,
     progress,
     play,
