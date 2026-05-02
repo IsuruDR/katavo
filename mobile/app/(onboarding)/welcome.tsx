@@ -74,7 +74,9 @@ export default function Welcome() {
               <Text style={styles.headline}>Your curiosity,</Text>
               <Text style={styles.headline}>voiced.</Text>
             </View>
-            <Text style={styles.subline}>Pick a topic. Hear it back.</Text>
+            <Text style={styles.subline}>
+              Pick your own topic. Hear it back. We do the research for you.
+            </Text>
           </View>
         </View>
 
