@@ -159,10 +159,7 @@ export async function deepResearch(
 
   // If immediately failed
   if (response.status === "failed" || response.status === "cancelled") {
-    return {
-      status: "failed",
-      errorMessage: `Deep research failed: ${(response as any).error?.message ?? "Unknown error"}`,
-    };
+    return failureFromResponse(response);
   }
 
   // Poll for completion
@@ -182,13 +179,44 @@ export async function deepResearch(
   }
 
   if (result.status !== "completed") {
-    return {
-      status: "failed",
-      errorMessage: `Deep research failed: status=${result.status}`,
-    };
+    return failureFromResponse(result);
   }
 
   return processCompletedResponse(result, state);
+}
+
+/**
+ * Extract a useful error message + log the raw response for debugging.
+ * The Responses API surfaces failure details in either `error` (hard
+ * failure) or `incomplete_details` (partial / truncated). We dump the
+ * whole shape to stderr so Railway logs reveal the cause without code
+ * changes; the user-facing message picks the most informative field.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function failureFromResponse(response: any): Partial<PipelineStateType> {
+  const status = response?.status ?? "unknown";
+  const errorObj = response?.error;
+  const incomplete = response?.incomplete_details;
+
+  console.error("Deep research failure:", {
+    id: response?.id,
+    status,
+    error: errorObj,
+    incomplete_details: incomplete,
+  });
+
+  let detail = "";
+  if (errorObj?.message) {
+    detail = ` (${errorObj.code ? `${errorObj.code}: ` : ""}${errorObj.message})`;
+  } else if (incomplete?.reason) {
+    detail = ` (incomplete: ${incomplete.reason})`;
+  }
+
+  return {
+    status: "failed",
+    errorMessage: `Deep research failed: status=${status}${detail}`,
+    rawResearchResponse: response as Record<string, unknown>,
+  };
 }
 
 function processCompletedResponse(
