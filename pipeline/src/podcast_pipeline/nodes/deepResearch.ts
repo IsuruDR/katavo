@@ -21,6 +21,71 @@ function isDeepResearchOptions(v: unknown): v is DeepResearchOptions {
   return typeof v === "object" && v !== null && ("timeoutMs" in v || "pollIntervalMs" in v);
 }
 
+// Rate-limit retry budget. The o4-mini-deep-research model has a tight
+// per-minute token cap; transient hits should auto-retry, persistent
+// hits should fall through to the user-facing failure.
+const MAX_RATE_LIMIT_RETRIES = 2;
+const MAX_WAIT_PER_RETRY_MS = 30_000;
+const DEFAULT_RATE_LIMIT_WAIT_MS = 5_000;
+
+/**
+ * Parse "Please try again in N.NNNs" out of a rate-limit message.
+ * Falls back to DEFAULT_RATE_LIMIT_WAIT_MS when the format isn't there.
+ */
+export function parseRateLimitWaitMs(message: string): number {
+  const match = message.match(/try again in (\d+(?:\.\d+)?)s/i);
+  if (!match) return DEFAULT_RATE_LIMIT_WAIT_MS;
+  const seconds = parseFloat(match[1]);
+  if (!Number.isFinite(seconds) || seconds <= 0) return DEFAULT_RATE_LIMIT_WAIT_MS;
+  // Add a 500ms buffer so we don't slam the API right at the boundary.
+  return Math.min(Math.ceil(seconds * 1000) + 500, MAX_WAIT_PER_RETRY_MS);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isRateLimited(response: any): boolean {
+  return (
+    response?.status === "failed" &&
+    response?.error?.code === "rate_limit_exceeded"
+  );
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Invoke an OpenAI background-mode call, retrying with the suggested
+ * backoff when the response comes back rate-limited. Network errors
+ * (thrown exceptions) bubble out unchanged — those aren't rate limits.
+ *
+ * Rationale: o4-mini-deep-research has a 200k TPM org cap. A single
+ * podcast costs ~28k tokens, so 7+ rapid submissions in one minute
+ * trips the limit. The error itself says "try again in 1.351s" — a
+ * tight retry beats forcing the user to manually tap "try again".
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function callWithRateLimitRetry<T extends { status?: string; error?: any }>(
+  call: () => Promise<T>,
+  maxRetries: number = MAX_RATE_LIMIT_RETRIES,
+): Promise<T> {
+  let lastResponse: T | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await call();
+    if (!isRateLimited(response)) return response;
+
+    lastResponse = response;
+    if (attempt >= maxRetries) break;
+
+    const waitMs = parseRateLimitWaitMs(response.error?.message ?? "");
+    console.log(
+      `Deep research rate-limited (attempt ${attempt + 1}/${maxRetries + 1}); ` +
+        `waiting ${waitMs}ms before retry`,
+    );
+    await sleep(waitMs);
+  }
+  // Exhausted retries — return the last rate-limited response so the
+  // caller can surface the original error message to the user.
+  return lastResponse as T;
+}
+
 interface UrlCitationAnnotation {
   type: "url_citation";
   url: string;
@@ -137,13 +202,15 @@ export async function deepResearch(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let response: any;
   try {
-    response = await openai.responses.create({
-      model: "o4-mini-deep-research",
-      input: prompt,
-      background: true,
-      tools: [{ type: "web_search_preview" }],
-      max_tool_calls: maxToolCalls,
-    } as any);
+    response = await callWithRateLimitRetry(() =>
+      openai.responses.create({
+        model: "o4-mini-deep-research",
+        input: prompt,
+        background: true,
+        tools: [{ type: "web_search_preview" }],
+        max_tool_calls: maxToolCalls,
+      } as any),
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return {

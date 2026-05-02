@@ -12,7 +12,10 @@ vi.mock("openai", () => ({
   })),
 }));
 
-import { deepResearch } from "../src/podcast_pipeline/nodes/deepResearch.js";
+import {
+  deepResearch,
+  parseRateLimitWaitMs,
+} from "../src/podcast_pipeline/nodes/deepResearch.js";
 
 describe("deepResearch", () => {
   beforeEach(() => {
@@ -267,5 +270,123 @@ describe("deepResearch", () => {
 
     expect(result.status).toBe("failed");
     expect(result.errorMessage).toContain("Deep research failed");
+  });
+});
+
+describe("parseRateLimitWaitMs", () => {
+  it("parses 'try again in N.NNNs' formats", () => {
+    expect(parseRateLimitWaitMs("Please try again in 1.351s.")).toBe(1851);
+    expect(parseRateLimitWaitMs("Try again in 0.5s")).toBe(1000);
+    expect(parseRateLimitWaitMs("try again in 12s now")).toBe(12500);
+  });
+
+  it("falls back to default when format absent", () => {
+    expect(parseRateLimitWaitMs("nope nothing here")).toBe(5000);
+    expect(parseRateLimitWaitMs("")).toBe(5000);
+  });
+
+  it("caps at MAX_WAIT_PER_RETRY_MS for absurd waits", () => {
+    expect(parseRateLimitWaitMs("try again in 600s")).toBe(30000);
+  });
+});
+
+describe("deepResearch rate-limit retry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  it("retries when first call returns rate_limit_exceeded and succeeds on second", async () => {
+    // First create call: rate-limited.
+    mockCreate
+      .mockResolvedValueOnce({
+        id: "resp_rl",
+        status: "failed",
+        error: {
+          code: "rate_limit_exceeded",
+          message: "Rate limit reached. Please try again in 0.1s.",
+        },
+      })
+      // Second call: success-in-progress, then poll completes.
+      .mockResolvedValueOnce({
+        id: "resp_ok",
+        status: "in_progress",
+      });
+
+    mockRetrieve.mockResolvedValueOnce({
+      id: "resp_ok",
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({
+                sections: [{ title: "S", content: "C" }],
+                sources: [{ url: "https://a.com", title: "A" }],
+              }),
+            },
+          ],
+        },
+      ],
+    });
+
+    const state = {
+      researchBrief: '{"scope":"x","keyQuestions":["q"]}',
+      trustedSourceUrls: [],
+      tier: "free",
+      researchIterations: 0,
+      credibilityReport: "",
+    };
+
+    const promise = deepResearch(state as any, {
+      timeoutMs: 1000,
+      pollIntervalMs: 10,
+    });
+
+    // Advance through the parsed retry-after sleep + the polling sleep.
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    const result = await promise;
+
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("scripting");
+    expect(result.sources).toHaveLength(1);
+  });
+
+  it("gives up after exhausting retries and surfaces the rate-limit message", async () => {
+    mockCreate.mockResolvedValue({
+      id: "resp_rl",
+      status: "failed",
+      error: {
+        code: "rate_limit_exceeded",
+        message:
+          "Rate limit reached for o4-mini-deep-research. Please try again in 0.05s.",
+      },
+    });
+
+    const state = {
+      researchBrief: '{"scope":"x","keyQuestions":["q"]}',
+      trustedSourceUrls: [],
+      tier: "free",
+      researchIterations: 0,
+      credibilityReport: "",
+    };
+
+    const promise = deepResearch(state as any, {
+      timeoutMs: 1000,
+      pollIntervalMs: 10,
+    });
+
+    // Advance through both retry sleeps (~550ms each).
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const result = await promise;
+
+    // 1 initial + 2 retries = 3 total calls.
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+    expect(result.status).toBe("failed");
+    expect(result.errorMessage).toContain("rate_limit_exceeded");
   });
 });
