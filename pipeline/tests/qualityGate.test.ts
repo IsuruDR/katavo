@@ -76,6 +76,44 @@ describe("qualityGate", () => {
     expect(result.researchIterations).toBe(3);
   });
 
+  it("should fail (not proceed) when zero research material remains after max retries", () => {
+    // Reproduces the silent-12-second-podcast bug: deepResearch returned
+    // status="failed" three times, leaving sources=[] and sections=[]. The
+    // pipeline must not proceed-with-disclaimer when there is literally
+    // nothing to write about.
+    const state = {
+      status: "failed",
+      errorMessage: "Deep research failed: rate_limit",
+      credibilityScore: null,
+      researchIterations: 2,
+      sources: [],
+      researchDocument: {},
+      researchBrief: '{"keyQuestions":["q1"]}',
+    };
+
+    const result = qualityGate(state as any);
+
+    expect(result.status).toBe("failed");
+    expect(result.shouldRetry).toBe(false);
+    expect(result.needsDisclaimer).toBeFalsy();
+    expect(result.errorMessage).toBeTruthy();
+  });
+
+  it("should fail when researchDocument has empty sections array and zero sources after max retries", () => {
+    const state = {
+      credibilityScore: 0,
+      researchIterations: 2,
+      sources: [],
+      researchDocument: { sections: [] },
+      researchBrief: '{"keyQuestions":["q1"]}',
+    };
+
+    const result = qualityGate(state as any);
+
+    expect(result.status).toBe("failed");
+    expect(result.errorMessage).toBeTruthy();
+  });
+
   it("should handle malformed researchBrief gracefully", () => {
     const state = {
       credibilityScore: 0.9,

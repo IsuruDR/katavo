@@ -10,6 +10,22 @@ import {
 } from "../config.js";
 import type { PipelineStateType } from "../state.js";
 
+/**
+ * Returns true when the research bundle has nothing for scriptWriter to
+ * work with: zero sources AND no document sections. Distinct from "thin"
+ * research (some content, low credibility) which is still scriptable
+ * with a disclaimer.
+ */
+function hasNoResearchMaterial(state: PipelineStateType): boolean {
+  const sources = state.sources ?? [];
+  const sections = Array.isArray(
+    (state.researchDocument as { sections?: unknown[] } | undefined)?.sections,
+  )
+    ? ((state.researchDocument as { sections: unknown[] }).sections.length)
+    : 0;
+  return sources.length === 0 && sections === 0;
+}
+
 export function qualityGate(
   state: PipelineStateType,
 ): Partial<PipelineStateType> {
@@ -46,8 +62,25 @@ export function qualityGate(
     };
   }
 
-  // Max retries exceeded -- proceed with disclaimer
+  // Max retries exceeded
   if (newIterations > MAX_RESEARCH_RETRIES) {
+    // Empty research can't be scripted around — failing produces a
+    // refunded credit (via handle_podcast_failure trigger) and a clear
+    // error_message. The disclaimer path is reserved for thin-but-real
+    // research, not no-API-response state.
+    if (hasNoResearchMaterial(state)) {
+      return {
+        status: "failed",
+        researchIterations: newIterations,
+        shouldRetry: false,
+        needsDisclaimer: false,
+        errorMessage:
+          state.errorMessage ??
+          "Couldn't gather any research for this topic after multiple attempts.",
+        credibilityReport: gaps.join("; "),
+      };
+    }
+
     return {
       status: "scripting",
       researchIterations: newIterations,

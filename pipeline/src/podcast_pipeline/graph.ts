@@ -18,17 +18,32 @@ import { metadataWriter } from "./nodes/metadataWriter.js";
 import { handlePipelineFailure } from "./nodes/errorHandler.js";
 import { getLangfuseCallbackHandler } from "./providers/langfuseClient.js";
 
-function routeAfterQualityGate(state: PipelineStateType): string {
-  if (state.shouldRetry) {
-    return "deepResearch";
-  }
+const DEFAULT_FAILURE_MESSAGE = "Pipeline failed";
+
+/**
+ * If deepResearch came back with status="failed" (rate-limited, content
+ * rejected, polling timeout, etc.), short-circuit to END instead of
+ * letting qualityGate run on empty state. qualityGate's retry-or-disclaim
+ * loop is for low-quality research, not no-API-response research.
+ */
+export function routeAfterDeepResearch(state: PipelineStateType): string {
   if (state.status === "failed") {
     return END;
+  }
+  return "qualityGate";
+}
+
+export function routeAfterQualityGate(state: PipelineStateType): string {
+  if (state.status === "failed") {
+    return END;
+  }
+  if (state.shouldRetry) {
+    return "deepResearch";
   }
   return "scriptWriter";
 }
 
-function routeAfterScript(state: PipelineStateType): string {
+export function routeAfterScript(state: PipelineStateType): string {
   if (state.status === "failed") {
     return END;
   }
@@ -48,7 +63,7 @@ const workflow = new StateGraph(PipelineState)
   .addNode("metadataWriter", metadataWriter)
   .addEdge("__start__", "briefBuilder")
   .addEdge("briefBuilder", "deepResearch")
-  .addEdge("deepResearch", "qualityGate")
+  .addConditionalEdges("deepResearch", routeAfterDeepResearch)
   .addConditionalEdges("qualityGate", routeAfterQualityGate)
   .addConditionalEdges("scriptWriter", routeAfterScript)
   .addEdge("adInjector", "audioProducer")
@@ -69,7 +84,20 @@ export async function runPipeline(
   const state = makeInitialState(input);
   try {
     const callbacks = [getLangfuseCallbackHandler()];
-    return await graph.invoke(state, { callbacks });
+    const result = await graph.invoke(state, { callbacks });
+
+    // A node may set status="failed" without throwing (e.g. deepResearch
+    // returns { status: "failed", errorMessage } when the API rejects).
+    // The graph completes "successfully" but the work didn't. Persist the
+    // failure so the row reflects reality and the auto-refund trigger fires.
+    if (result.status === "failed" && state.podcastId) {
+      await handlePipelineFailure(
+        state.podcastId,
+        result.errorMessage ?? DEFAULT_FAILURE_MESSAGE,
+      );
+    }
+
+    return result;
   } catch (error: unknown) {
     if (!options.isRetryable) {
       const message = error instanceof Error ? error.message : String(error);
