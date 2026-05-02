@@ -214,6 +214,8 @@ export async function signInWithApple(): Promise<{ displayName?: string }> {
 
 export async function signInWithGoogle(): Promise<{ displayName?: string }> {
   ensureGoogleConfigured();
+  // hasPlayServices() is a no-op on iOS but generates a benign log line.
+  // We keep the call for cross-platform correctness if Android ships later.
   await GoogleSignin.hasPlayServices();
   const userInfo = await GoogleSignin.signIn();
   // v14 uses userInfo.data.idToken; older majors used userInfo.idToken.
@@ -303,16 +305,18 @@ Apple uses the official `<AppleAuthenticationButton />` (HIG-compliant, auto-sty
   buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
   buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
   cornerRadius={28}
-  style={{ height: 56, width: "100%" }}
-  onPress={() => signInWithApple().catch((e) => setError(e.message))}
+  style={{ height: 56, width: "100%", opacity: submitting ? 0.5 : 1 }}
+  onPress={handleApple}        // see Loading + error handling section
 />
 
-<GoogleButton onPress={() => signInWithGoogle().catch((e) => setError(e.message))} />
+<GoogleButton onPress={handleGoogle} disabled={submitting !== null} />
 
 <Divider label="or with email" />
 
 <EmailPasswordForm ... existing ... />
 ```
+
+(`handleApple` and `handleGoogle` are the wrappers defined in the **Loading + error handling** section below — they manage the `submitting` state and silence cancellation errors.)
 
 `<GoogleButton />` is a new component: 56pt tall, rounded pill, white background with hairline border, Google "G" SVG mark + "Continue with Google" label.
 
@@ -361,7 +365,7 @@ Cancellation is silent — Apple throws with `code === "ERR_REQUEST_CANCELED"`, 
 | Google sign-in succeeds | Tap Google → native account picker → success → `/(tabs)` or onboarding. `auth.users` row created. |
 | Google captures name | `profiles.display_name` populated from Google's `user.name` when previously null. |
 | Email still works | Existing email/password form unchanged in behavior. |
-| Auto-linking | Sign up with `foo@gmail.com` via email/password. Sign out. Tap Continue with Google with the same Gmail. Lands in same `user.id`, single profiles row. |
+| Auto-linking | **Pre-condition: "Allow same email for multiple identities" must be enabled in Supabase Auth dashboard (step 8 of Setup).** Sign up with `foo@gmail.com` via email/password. Sign out. Tap Continue with Google with the same Gmail. Lands in same `user.id`, single profiles row. If the flag is off, this test will fail with `User already registered` — re-check the dashboard. |
 | Cancellation is silent | User cancels Apple or Google sheet → no error toast, returns to sign-in. |
 | Sign-out works for all three | After signing in via any provider, Account → Sign out clears the session. |
 
