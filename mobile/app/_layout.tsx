@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Slot, useRouter, useSegments } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { ConversationProvider } from "@elevenlabs/react-native";
 import {
   IBMPlexSans_400Regular,
@@ -94,9 +94,15 @@ function RootLayoutInner() {
 
   if (loading || !fontsLoaded) return <LoadingOverlay message="" />;
 
+  // Root Stack (not Slot) so non-tab routes — voice-settings, player/[id],
+  // player/deep-dive — push ON TOP of the (tabs) group with the active tab
+  // preserved. With Slot, every navigation swap remounted (tabs) from
+  // scratch and the Tabs navigator defaulted to its first tab on back,
+  // breaking back-from-voice-settings (landed on Library instead of
+  // Account) and similarly for the player.
   return (
     <ConversationProvider>
-      <Slot />
+      <Stack screenOptions={{ headerShown: false }} />
     </ConversationProvider>
   );
 }
