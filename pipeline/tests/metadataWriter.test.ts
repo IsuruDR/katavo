@@ -18,6 +18,12 @@ vi.mock("../src/podcast_pipeline/providers/supabaseClient.js", () => ({
 vi.mock("../src/routes/notifyComplete.js", () => ({
   sendPodcastNotification: vi.fn().mockResolvedValue(undefined),
 }));
+
+// Mock cover artwork rendering — exercising satori in unit tests is slow
+// and the supabase mock doesn't stub `.storage`, so we just no-op it here.
+vi.mock("../src/podcast_pipeline/nodes/coverArtwork.js", () => ({
+  generateCoverArtwork: vi.fn().mockResolvedValue(Buffer.alloc(0)),
+}));
 import {
   metadataWriter,
   extractChapters,

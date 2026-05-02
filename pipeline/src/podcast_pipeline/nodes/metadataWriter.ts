@@ -4,6 +4,7 @@
 
 import { getSupabaseClient } from "../providers/supabaseClient.js";
 import { sendPodcastNotification } from "../../routes/notifyComplete.js";
+import { generateCoverArtwork } from "./coverArtwork.js";
 import type { PipelineStateType } from "../state.js";
 
 interface ChapterMarker {
@@ -37,7 +38,7 @@ export function extractChapters(
 export async function metadataWriter(
   state: PipelineStateType,
 ): Promise<Partial<PipelineStateType>> {
-  const { podcastId, script } = state;
+  const { podcastId, script, userId, topic } = state;
   const duration = state.durationSeconds ?? 0;
 
   const chapters = extractChapters(script, duration);
@@ -50,7 +51,33 @@ export async function metadataWriter(
 
   const supabase = getSupabaseClient();
 
-  // Update podcast record (now includes chapter_research_map)
+  // Generate + upload lock-screen artwork. Best-effort: if rendering or upload
+  // fails, we still complete the podcast — the OS just shows a default
+  // artwork-less Now Playing widget.
+  let coverUrl: string | null = null;
+  try {
+    const png = await generateCoverArtwork({
+      topic,
+      chapterCount: chapters.length,
+      durationMinutes: Math.max(1, Math.round(duration / 60)),
+    });
+    const coverPath = `${userId}/${podcastId}.png`;
+    const { error: coverUploadError } = await supabase.storage
+      .from("podcast-covers")
+      .upload(coverPath, png, { contentType: "image/png", upsert: true });
+    if (!coverUploadError) {
+      const { data: signed } = await supabase.storage
+        .from("podcast-covers")
+        .createSignedUrl(coverPath, 60 * 60 * 24 * 365);
+      coverUrl = signed?.signedUrl ?? null;
+    }
+  } catch (err) {
+    // Don't fail the pipeline on artwork issues. Log via console; the
+    // podcast still completes without a cover image.
+    console.error("Cover artwork failed:", err);
+  }
+
+  // Update podcast record (now includes chapter_research_map + cover_url)
   const { error: updateError } = await supabase
     .from("podcasts")
     .update({
@@ -60,6 +87,7 @@ export async function metadataWriter(
       duration_seconds: duration,
       chapter_markers: chapters,
       chapter_research_map: state.chapterResearchMap ?? null,
+      cover_url: coverUrl,
     })
     .eq("id", podcastId);
   if (updateError)
