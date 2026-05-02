@@ -29,16 +29,28 @@ const MAX_WAIT_PER_RETRY_MS = 30_000;
 const DEFAULT_RATE_LIMIT_WAIT_MS = 5_000;
 
 /**
- * Parse "Please try again in N.NNNs" out of a rate-limit message.
- * Falls back to DEFAULT_RATE_LIMIT_WAIT_MS when the format isn't there.
+ * Parse "Please try again in NNNms" or "N.NNNs" out of a rate-limit
+ * message. Falls back to DEFAULT_RATE_LIMIT_WAIT_MS when the format
+ * isn't there. Both unit formats appear in the wild — short waits come
+ * back as ms, longer ones as seconds.
  */
 export function parseRateLimitWaitMs(message: string): number {
-  const match = message.match(/try again in (\d+(?:\.\d+)?)s/i);
-  if (!match) return DEFAULT_RATE_LIMIT_WAIT_MS;
-  const seconds = parseFloat(match[1]);
-  if (!Number.isFinite(seconds) || seconds <= 0) return DEFAULT_RATE_LIMIT_WAIT_MS;
-  // Add a 500ms buffer so we don't slam the API right at the boundary.
-  return Math.min(Math.ceil(seconds * 1000) + 500, MAX_WAIT_PER_RETRY_MS);
+  // Try ms first; the s-pattern would also match the trailing 's' of "ms".
+  const msMatch = message.match(/try again in (\d+(?:\.\d+)?)ms\b/i);
+  if (msMatch) {
+    const ms = parseFloat(msMatch[1]);
+    if (Number.isFinite(ms) && ms > 0) {
+      return Math.min(Math.ceil(ms) + 500, MAX_WAIT_PER_RETRY_MS);
+    }
+  }
+  const sMatch = message.match(/try again in (\d+(?:\.\d+)?)s\b/i);
+  if (sMatch) {
+    const seconds = parseFloat(sMatch[1]);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return Math.min(Math.ceil(seconds * 1000) + 500, MAX_WAIT_PER_RETRY_MS);
+    }
+  }
+  return DEFAULT_RATE_LIMIT_WAIT_MS;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,41 +62,6 @@ function isRateLimited(response: any): boolean {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Invoke an OpenAI background-mode call, retrying with the suggested
- * backoff when the response comes back rate-limited. Network errors
- * (thrown exceptions) bubble out unchanged — those aren't rate limits.
- *
- * Rationale: o4-mini-deep-research has a 200k TPM org cap. A single
- * podcast costs ~28k tokens, so 7+ rapid submissions in one minute
- * trips the limit. The error itself says "try again in 1.351s" — a
- * tight retry beats forcing the user to manually tap "try again".
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function callWithRateLimitRetry<T extends { status?: string; error?: any }>(
-  call: () => Promise<T>,
-  maxRetries: number = MAX_RATE_LIMIT_RETRIES,
-): Promise<T> {
-  let lastResponse: T | null = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const response = await call();
-    if (!isRateLimited(response)) return response;
-
-    lastResponse = response;
-    if (attempt >= maxRetries) break;
-
-    const waitMs = parseRateLimitWaitMs(response.error?.message ?? "");
-    console.log(
-      `Deep research rate-limited (attempt ${attempt + 1}/${maxRetries + 1}); ` +
-        `waiting ${waitMs}ms before retry`,
-    );
-    await sleep(waitMs);
-  }
-  // Exhausted retries — return the last rate-limited response so the
-  // caller can surface the original error message to the user.
-  return lastResponse as T;
-}
 
 interface UrlCitationAnnotation {
   type: "url_citation";
@@ -162,6 +139,56 @@ function computeCredibilityScore(
   return Math.min(1.0, uniqueSourceCount / keyQuestionsCount);
 }
 
+/**
+ * Submit a Deep Research background job and poll until it reaches a
+ * terminal state. Returns the final response object verbatim — the
+ * caller decides whether terminal=completed (success), failed (retry
+ * if rate-limited, fail otherwise), or timed out.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function createAndPoll(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  openai: any,
+  prompt: string,
+  maxToolCalls: number,
+  timeoutMs: number,
+  pollIntervalMs: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any> {
+  const response = await openai.responses.create({
+    model: "o4-mini-deep-research",
+    input: prompt,
+    background: true,
+    tools: [{ type: "web_search_preview" }],
+    max_tool_calls: maxToolCalls,
+  } as any);
+
+  // Already terminal — no polling needed
+  if (response.status !== "in_progress" && response.status !== "queued") {
+    return response;
+  }
+
+  const startTime = Date.now();
+  let result = response;
+  while (result.status === "in_progress" || result.status === "queued") {
+    if (Date.now() - startTime > timeoutMs) {
+      // Synthesize a terminal response so the retry/failure code path
+      // upstream treats this uniformly with API-driven failures.
+      return {
+        ...result,
+        status: "failed",
+        error: {
+          code: "timeout",
+          message: `Deep research timed out after ${Math.round(timeoutMs / 1000)}s`,
+        },
+      };
+    }
+    await sleep(pollIntervalMs);
+    result = await openai.responses.retrieve(result.id);
+  }
+  return result;
+}
+
 export async function deepResearch(
   state: PipelineStateType,
   configOrOptions?: unknown,
@@ -198,58 +225,46 @@ export async function deepResearch(
     .replace("{retryContext}", retryContext)
     .replace("{researchBrief}", state.researchBrief);
 
-  // Deep research API supports max_tool_calls but SDK types lag behind
+  // Run create+poll, retry the entire cycle when rate-limited. The o4
+  // model can return rate_limit_exceeded both at job submission AND
+  // after polling (background job hits the cap mid-flight), so wrapping
+  // ONLY the create call left a hole the polling path leaked through.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let response: any;
-  try {
-    response = await callWithRateLimitRetry(() =>
-      openai.responses.create({
-        model: "o4-mini-deep-research",
-        input: prompt,
-        background: true,
-        tools: [{ type: "web_search_preview" }],
-        max_tool_calls: maxToolCalls,
-      } as any),
+  let response: any = null;
+  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
+    try {
+      response = await createAndPoll(
+        openai,
+        prompt,
+        maxToolCalls,
+        timeoutMs,
+        pollIntervalMs,
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        status: "failed",
+        errorMessage: `Deep research failed: ${message}`,
+      };
+    }
+
+    if (!isRateLimited(response)) break;
+
+    if (attempt >= MAX_RATE_LIMIT_RETRIES) break;
+
+    const waitMs = parseRateLimitWaitMs(response.error?.message ?? "");
+    console.log(
+      `Deep research rate-limited (attempt ${attempt + 1}/${MAX_RATE_LIMIT_RETRIES + 1}); ` +
+        `waiting ${waitMs}ms before retry`,
     );
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      status: "failed",
-      errorMessage: `Deep research failed: ${message}`,
-    };
+    await sleep(waitMs);
   }
 
-  // If immediately completed (no polling needed)
   if (response.status === "completed") {
     return processCompletedResponse(response, state);
   }
 
-  // If immediately failed
-  if (response.status === "failed" || response.status === "cancelled") {
-    return failureFromResponse(response);
-  }
-
-  // Poll for completion
-  const startTime = Date.now();
-  let result = response;
-
-  while (result.status === "in_progress" || result.status === "queued") {
-    if (Date.now() - startTime > timeoutMs) {
-      return {
-        status: "failed",
-        errorMessage: `Deep research timed out after ${Math.round(timeoutMs / 1000)}s`,
-      };
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-    result = await openai.responses.retrieve(result.id);
-  }
-
-  if (result.status !== "completed") {
-    return failureFromResponse(result);
-  }
-
-  return processCompletedResponse(result, state);
+  return failureFromResponse(response);
 }
 
 /**

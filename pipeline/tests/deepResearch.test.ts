@@ -274,10 +274,15 @@ describe("deepResearch", () => {
 });
 
 describe("parseRateLimitWaitMs", () => {
-  it("parses 'try again in N.NNNs' formats", () => {
+  it("parses 'try again in N.NNNs' (seconds)", () => {
     expect(parseRateLimitWaitMs("Please try again in 1.351s.")).toBe(1851);
     expect(parseRateLimitWaitMs("Try again in 0.5s")).toBe(1000);
     expect(parseRateLimitWaitMs("try again in 12s now")).toBe(12500);
+  });
+
+  it("parses 'try again in NNNms' (milliseconds)", () => {
+    expect(parseRateLimitWaitMs("Please try again in 109ms.")).toBe(609);
+    expect(parseRateLimitWaitMs("try again in 50ms")).toBe(550);
   });
 
   it("falls back to default when format absent", () => {
@@ -353,6 +358,62 @@ describe("deepResearch rate-limit retry", () => {
     expect(mockCreate).toHaveBeenCalledTimes(2);
     expect(result.status).toBe("scripting");
     expect(result.sources).toHaveLength(1);
+  });
+
+  it("retries when rate-limit appears during polling (not at submission)", async () => {
+    // The actual production bug: create succeeded with in_progress,
+    // poll returned a rate_limit_exceeded failure. The retry helper
+    // must restart from create, not just retry the polled retrieve.
+    mockCreate
+      .mockResolvedValueOnce({ id: "resp_first", status: "in_progress" })
+      .mockResolvedValueOnce({ id: "resp_second", status: "in_progress" });
+
+    mockRetrieve
+      .mockResolvedValueOnce({
+        id: "resp_first",
+        status: "failed",
+        error: {
+          code: "rate_limit_exceeded",
+          message: "Rate limit. Please try again in 0.05s.",
+        },
+      })
+      .mockResolvedValueOnce({
+        id: "resp_second",
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  sections: [{ title: "S", content: "C" }],
+                  sources: [{ url: "https://a.com", title: "A" }],
+                }),
+              },
+            ],
+          },
+        ],
+      });
+
+    const state = {
+      researchBrief: '{"scope":"x","keyQuestions":["q"]}',
+      trustedSourceUrls: [],
+      tier: "free",
+      researchIterations: 0,
+      credibilityReport: "",
+    };
+
+    const promise = deepResearch(state as any, {
+      timeoutMs: 1000,
+      pollIntervalMs: 10,
+    });
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    const result = await promise;
+
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("scripting");
   });
 
   it("gives up after exhausting retries and surfaces the rate-limit message", async () => {
