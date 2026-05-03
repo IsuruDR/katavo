@@ -17,8 +17,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link } from "expo-router";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { useAuth } from "../../src/hooks/useAuth";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
+import { GoogleButton } from "../../src/components/GoogleButton";
+import { isCancellationError } from "../../src/lib/auth-providers";
 import { color, font, layout, space, text } from "../../src/theme/tokens";
 
 export default function SignUp() {
@@ -27,10 +30,14 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentEmail, setSentEmail] = useState<string | null>(null);
-  const { signUp } = useAuth();
+  const { signUp, signInWithApple, signInWithGoogle } = useAuth();
+  const [submitting, setSubmitting] = useState<"apple" | "google" | null>(null);
 
   const canSubmit =
-    email.trim().length > 0 && password.length >= 6 && !loading;
+    email.trim().length > 0 &&
+    password.length >= 6 &&
+    !loading &&
+    submitting === null;
 
   const handleSignUp = async () => {
     if (!canSubmit) return;
@@ -43,6 +50,34 @@ export default function SignUp() {
       setError(err?.message || "Couldn't create your account. Try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApple = async () => {
+    setError(null);
+    setSubmitting("apple");
+    try {
+      await signInWithApple();
+    } catch (e: any) {
+      if (!isCancellationError(e)) {
+        setError(e?.message || "Couldn't sign up with Apple. Try again.");
+      }
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setError(null);
+    setSubmitting("google");
+    try {
+      await signInWithGoogle();
+    } catch (e: any) {
+      if (!isCancellationError(e)) {
+        setError(e?.message || "Couldn't sign up with Google. Try again.");
+      }
+    } finally {
+      setSubmitting(null);
     }
   };
 
@@ -98,6 +133,26 @@ export default function SignUp() {
           </Text>
 
           {error && <Text style={styles.error}>{error}</Text>}
+
+          <View style={styles.socialButtons}>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={28}
+              style={[
+                styles.appleButton,
+                submitting !== null && { opacity: 0.5 },
+              ]}
+              onPress={handleApple}
+            />
+            <GoogleButton onPress={handleGoogle} disabled={submitting !== null} />
+          </View>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerLabel}>or with email</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
           <View style={styles.fields}>
             <TextInput
@@ -201,6 +256,32 @@ const styles = StyleSheet.create({
     ...text.bodySmall,
     color: color.warning,
     marginBottom: space.sm,
+  },
+  socialButtons: {
+    gap: space.sm,
+    marginBottom: space.lg,
+  },
+  appleButton: {
+    height: 56,
+    width: "100%",
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    marginVertical: space.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: color.hairline,
+  },
+  dividerLabel: {
+    ...text.bodySmall,
+    color: color.inkTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    fontSize: 11,
   },
   fields: {
     gap: space.lg,
