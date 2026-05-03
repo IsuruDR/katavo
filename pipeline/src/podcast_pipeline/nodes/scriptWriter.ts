@@ -5,6 +5,7 @@
 
 import { getObservedOpenAI } from "../providers/langfuseClient.js";
 import { SCRIPT_WRITER_PROMPT, TARGET_WORD_COUNT } from "../config.js";
+import { persistStatus } from "./persistStatus.js";
 import type { PipelineStateType, ChapterResearchMap, ChapterResearchEntry } from "../state.js";
 
 /**
@@ -49,6 +50,8 @@ export function parseChapterResearchMap(
 export async function scriptWriter(
   state: PipelineStateType,
 ): Promise<Partial<PipelineStateType>> {
+  await persistStatus(state.podcastId, "scripting");
+
   const openai = getObservedOpenAI();
   const { researchDocument, sources = [], needsDisclaimer = false } = state;
 

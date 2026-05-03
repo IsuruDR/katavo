@@ -11,6 +11,7 @@ import { AD_PRE_ROLL_MARKER, AD_MID_ROLL_MARKER } from "../config.js";
 import type { TTSProvider } from "../providers/ttsBase.js";
 import { OpenAITTS } from "../providers/ttsOpenai.js";
 import { getSupabaseClient } from "../providers/supabaseClient.js";
+import { persistStatus } from "./persistStatus.js";
 import type { PipelineStateType } from "../state.js";
 
 const AD_AUDIO_DIR = process.env.AD_AUDIO_DIR ?? "ad_assets";
@@ -110,6 +111,8 @@ export async function audioProducer(
   state: PipelineStateType,
 ): Promise<Partial<PipelineStateType>> {
   const { script, podcastId, userId } = state;
+
+  await persistStatus(podcastId, "generating_audio");
 
   const tts = getTtsProvider();
   const segments = splitScriptSegments(script);

@@ -27,6 +27,12 @@ function isDeepResearchOptions(v: unknown): v is DeepResearchOptions {
 const MAX_RATE_LIMIT_RETRIES = 2;
 const MAX_WAIT_PER_RETRY_MS = 30_000;
 const DEFAULT_RATE_LIMIT_WAIT_MS = 5_000;
+// Total wall-clock budget for retries. When the org is sustained-saturated,
+// each background job sits in_progress for several minutes before OpenAI
+// reports rate-limit. Without a total cap we'd burn the user's wait on
+// retries that aren't going to succeed. Past this we surface the last
+// failure so the credit refunds and the user can try again later.
+const RETRY_TOTAL_BUDGET_MS = 8 * 60_000;
 
 /**
  * Parse "Please try again in NNNms" or "N.NNNs" out of a rate-limit
@@ -229,9 +235,20 @@ export async function deepResearch(
   // model can return rate_limit_exceeded both at job submission AND
   // after polling (background job hits the cap mid-flight), so wrapping
   // ONLY the create call left a hole the polling path leaked through.
+  // A total wall-clock budget bounds how long a sustained-saturation
+  // case can keep the user waiting before we surface the failure.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let response: any = null;
+  const retryStart = Date.now();
   for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
+    if (attempt > 0 && Date.now() - retryStart >= RETRY_TOTAL_BUDGET_MS) {
+      console.log(
+        `Deep research retry budget (${RETRY_TOTAL_BUDGET_MS}ms) exhausted; ` +
+          `surfacing last failure`,
+      );
+      break;
+    }
+
     try {
       response = await createAndPoll(
         openai,
