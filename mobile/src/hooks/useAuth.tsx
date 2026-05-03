@@ -1,6 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import {
+  signInWithApple as signInWithAppleNative,
+  signInWithGoogle as signInWithGoogleNative,
+} from "../lib/auth-providers";
 
 interface AuthContextType {
   session: Session | null;
@@ -9,6 +13,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -51,8 +57,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }, []);
 
+  const signInWithApple = useCallback(async () => {
+    const { displayName } = await signInWithAppleNative();
+    if (displayName) await persistDisplayNameIfMissing(displayName);
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    const { displayName } = await signInWithGoogleNative();
+    if (displayName) await persistDisplayNameIfMissing(displayName);
+  }, []);
+
+  async function persistDisplayNameIfMissing(name: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: row } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .single();
+    if (!row?.display_name) {
+      await supabase
+        .from("profiles")
+        .update({ display_name: name })
+        .eq("id", user.id);
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ session, user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, user, loading, signIn, signUp, signOut, signInWithApple, signInWithGoogle }}>
       {children}
     </AuthContext.Provider>
   );
