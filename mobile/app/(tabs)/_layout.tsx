@@ -63,15 +63,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="sources"
-        options={{
-          tabBarLabel: "Sources",
-          tabBarIcon: ({ color: tint, size }) => (
-            <Feather name="bookmark" size={size - 2} color={tint} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="account"
         options={{
           tabBarLabel: "Account",
