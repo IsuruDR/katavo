@@ -93,14 +93,35 @@ route.post("/", userAuth, async (c) => {
             {
               role: "system",
               content:
-                "You are helping a user create a personalized podcast on a topic they've chosen. Generate exactly 2-3 short, focused clarifying questions to understand what angle, depth, and specific aspects they want covered. Return a JSON array of strings. Example: [\"What specific aspect interests you most?\", \"What's your familiarity level with this topic?\"]",
+                "You are helping a user create a personalized podcast on a topic they've chosen. Generate exactly 2-3 short, focused clarifying questions to understand what angle, depth, and specific aspects they want covered.",
             },
             {
               role: "user",
               content: `Topic: ${topic}`,
             },
           ],
-          response_format: { type: "json_object" },
+          // Structured output: guarantees { questions: string[] } shape.
+          // The previous "json_object" mode let the model wrap the array
+          // under arbitrary keys (clarifying_questions, items, numeric
+          // keys), which broke the client.
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "clarifying_questions",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  questions: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                },
+                required: ["questions"],
+                additionalProperties: false,
+              },
+            },
+          },
           max_tokens: 300,
         }),
       },
@@ -113,13 +134,85 @@ route.post("/", userAuth, async (c) => {
     }
 
     const data = await response.json();
-    const content = JSON.parse(data.choices[0].message.content);
-    const questions = content.questions || content;
+    const rawContent = data?.choices?.[0]?.message?.content;
+    const questions = extractQuestions(rawContent);
+
+    if (!questions || questions.length === 0) {
+      console.error(
+        "generate-questions: unexpected response shape",
+        JSON.stringify(rawContent ?? data).slice(0, 800),
+      );
+      return c.json({ error: "Failed to generate questions" }, 500);
+    }
 
     return c.json({ questions });
-  } catch {
+  } catch (err: unknown) {
+    console.error(
+      "generate-questions: unexpected error",
+      err instanceof Error ? err.message : String(err),
+    );
     return c.json({ error: "Failed to generate questions" }, 500);
   }
 });
+
+/**
+ * Pull the questions array out of whatever shape the model returned.
+ * Strict json_schema mode should always give us { questions: string[] },
+ * but the defensive paths cover model drift, parsing failures, and the
+ * occasional flat-array response. Returns null when nothing usable
+ * appears so the caller can surface a 500 with the raw payload logged.
+ */
+export function extractQuestions(raw: unknown): string[] | null {
+  let content: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      content = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  const isStringArray = (v: unknown): v is string[] =>
+    Array.isArray(v) && v.every((x) => typeof x === "string");
+
+  if (isStringArray(content)) return content;
+
+  if (content && typeof content === "object") {
+    const obj = content as Record<string, unknown>;
+    if (isStringArray(obj.questions)) return obj.questions;
+    for (const key of [
+      "clarifying_questions",
+      "clarifyingQuestions",
+      "items",
+      "data",
+      "result",
+      "list",
+    ]) {
+      if (isStringArray(obj[key])) return obj[key] as string[];
+    }
+    // Any nested string-array
+    for (const v of Object.values(obj)) {
+      if (isStringArray(v)) return v;
+    }
+    // Object with numeric keys: { "1": "Q1", "2": "Q2" }. Require keys
+    // to actually be digits — otherwise a single { questions: "string" }
+    // would falsely match.
+    const keys = Object.keys(obj);
+    if (
+      keys.length > 0 &&
+      keys.every((k) => /^\d+$/.test(k))
+    ) {
+      const sorted = [...keys].sort(
+        (a, b) => parseInt(a, 10) - parseInt(b, 10),
+      );
+      const values = sorted.map((k) => obj[k]);
+      if (values.every((v) => typeof v === "string")) {
+        return values as string[];
+      }
+    }
+  }
+
+  return null;
+}
 
 export { route as generateQuestionsRoute };

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fetchWithRateLimitRetry } from "../src/routes/generateQuestions.js";
+import {
+  fetchWithRateLimitRetry,
+  extractQuestions,
+} from "../src/routes/generateQuestions.js";
 
 const buildResponse = (
   status: number,
@@ -103,5 +106,56 @@ describe("fetchWithRateLimitRetry", () => {
       fetchWithRateLimitRetry("https://api.x", { method: "POST" }),
     ).rejects.toThrow("ECONNRESET");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("extractQuestions", () => {
+  const qs = ["What angle?", "How deep?", "Any people?"];
+
+  it("accepts the canonical shape { questions: string[] } as a string", () => {
+    expect(extractQuestions(JSON.stringify({ questions: qs }))).toEqual(qs);
+  });
+
+  it("accepts already-parsed canonical object", () => {
+    expect(extractQuestions({ questions: qs })).toEqual(qs);
+  });
+
+  it("accepts a bare string array", () => {
+    expect(extractQuestions(qs)).toEqual(qs);
+    expect(extractQuestions(JSON.stringify(qs))).toEqual(qs);
+  });
+
+  it("falls back across alternate wrapper keys", () => {
+    expect(extractQuestions({ clarifying_questions: qs })).toEqual(qs);
+    expect(extractQuestions({ clarifyingQuestions: qs })).toEqual(qs);
+    expect(extractQuestions({ items: qs })).toEqual(qs);
+    expect(extractQuestions({ data: qs })).toEqual(qs);
+  });
+
+  it("finds the array under any unrecognized key", () => {
+    expect(extractQuestions({ random_thing: qs })).toEqual(qs);
+  });
+
+  it("converts a numeric-keyed object to an array", () => {
+    expect(
+      extractQuestions({ "1": qs[0], "2": qs[1], "3": qs[2] }),
+    ).toEqual(qs);
+  });
+
+  it("returns null for unparsable strings", () => {
+    expect(extractQuestions("not json {{{")).toBeNull();
+  });
+
+  it("returns null for non-array values", () => {
+    expect(extractQuestions({ questions: "not an array" })).toBeNull();
+    expect(extractQuestions(null)).toBeNull();
+    expect(extractQuestions(undefined)).toBeNull();
+    expect(extractQuestions(42)).toBeNull();
+  });
+
+  it("rejects mixed-type arrays (must be all strings)", () => {
+    expect(
+      extractQuestions({ questions: ["q", { not: "string" }, "q3"] }),
+    ).toBeNull();
   });
 });
