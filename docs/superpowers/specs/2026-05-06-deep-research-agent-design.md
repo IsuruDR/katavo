@@ -40,7 +40,7 @@ flowchart TD
     Sub2[Subagent 2<br/>deepagent + Haiku 4.5]
     SubN[Subagent N<br/>deepagent + Haiku 4.5]
 
-    Floor{Floor check<br/>≥ ⌈N/2⌉+1 succeeded?}
+    Floor{Floor check<br/>usable ≥ ⌈N/2⌉ + 1?}
     Synth[Synthesizer<br/>Sonnet 4.6<br/>findings → sections + sources + claims]
 
     Brief --> Planner
@@ -159,7 +159,7 @@ think about the question → tavily_search(query)
 
 **Job:**
 
-1. Dedup sources across subagents (URL-keyed).
+1. Dedup sources across subagents (URL-keyed). **Ordering is deterministic: first-appearance order, where iteration is over `tasks[]` in planner order, then `findings[]` in subagent order, then `sourceUrls[]` in finding order.** This makes `sourceIndexes` stable across runs for the same input + makes test assertions on indexes deterministic.
 2. Re-index `sourceUrls` from each subagent's findings into the deduped `sources` array.
 3. Group claims into 4-6 sections — one section per major topic angle. Sections are NOT 1:1 with `keyQuestions`; related questions may belong in one section.
 4. Write each section's `content` as cited prose, weaving claims with `[N]` markers. Output is what `scriptWriter` consumes today.
@@ -177,20 +177,26 @@ async function makeTavilyTool({ taskId, maxSearches }) {
       if (++searchCount > maxSearches) {
         return { error: "search_budget_exceeded", remaining: 0 };
       }
-      const results = await tavily.search(query, {
-        search_depth: "advanced",
-        include_raw_content: true,    // full-page content, not snippets
-        max_results: 5,
-      });
-      return {
-        query,
-        results: results.results.map(r => ({
-          url: r.url,
-          title: r.title,
-          content: r.raw_content ?? r.content,
-        })),
-        searchesRemaining: maxSearches - searchCount,
-      };
+      try {
+        const results = await tavily.search(query, {
+          search_depth: "advanced",
+          include_raw_content: true,    // full-page content, not snippets
+          max_results: 5,
+        });
+        return {
+          query,
+          results: results.results.map(r => ({
+            url: r.url,
+            title: r.title,
+            content: r.raw_content ?? r.content,
+          })),
+          searchesRemaining: maxSearches - searchCount,
+        };
+      } catch (err) {
+        // Counted toward budget already — return error object so deepagent
+        // can decide to try a different query rather than crash the loop.
+        return { error: "tavily_error", message: err.message, searchesRemaining: maxSearches - searchCount };
+      }
     },
     { name: "tavily_search", description: "Search the web for primary sources." }
   );
@@ -213,14 +219,28 @@ export const RESEARCH_MODELS = {
 } as const;
 
 // pipeline/src/podcast_pipeline/providers/openrouter.ts
-export function makeOpenRouterModel(modelName: string, opts?: { temperature?: number }) {
+export function makeOpenRouterModel(modelName: string, opts: { temperature: number }) {
   return new ChatOpenAI({
     modelName,
     apiKey: process.env.OPENROUTER_API_KEY,
     configuration: { baseURL: "https://openrouter.ai/api/v1" },
-    temperature: opts?.temperature ?? 0.3,
+    temperature: opts.temperature,
   });
 }
+```
+
+**Per-call-site temperatures.** Different roles need different determinism:
+
+| Role | Temperature | Why |
+|---|---|---|
+| Planner | 0.0 | Decomposition is deterministic; same brief should produce same tasks |
+| Synthesizer | 0.1 | Mostly deterministic JSON merging; tiny temperature for prose flow in `sections.content` |
+| Subagent | 0.4 | Search-loop benefits from query variability; reflection benefits from non-deterministic gap assessment |
+
+These are exported from `config.ts` as `RESEARCH_TEMPERATURES` so eval scripts can override via `configurable.temperature.<role>` if we want to tune.
+
+```typescript
+export const RESEARCH_TEMPERATURES = { planner: 0.0, synthesizer: 0.1, subagent: 0.4 } as const;
 ```
 
 **Two layers of override:**
@@ -298,7 +318,9 @@ researching → failed         (set by orchestrator if floor not met)
 }
 ```
 
-**`raw_response`** (used by deep-dive feature for granular per-claim source access):
+**`raw_response`** (forward-looking column for the future deep-dive feature; **no current consumers**):
+
+> The column was added in migration `00008_research_raw_response.sql` to "stash the full OpenAI Deep Research response" for future deep-dive use. It is **only written** today (by `metadataWriter.ts:103` from `state.rawResearchResponse`) — no code reads it. Verified by `grep -rn "raw_response" pipeline/src/routes/ mobile/src/` returning only writer paths and the type declaration. This means the new shape is a forward-looking redefinition, not a breaking change. The column comment in the migration should be updated to reflect the new shape during the cutover.
 
 ```json
 {
@@ -376,6 +398,10 @@ const score = totalClaims === 0
 
 70/30: most weight on per-claim citation, secondary credit for source diversity (penalizes citing the same source for everything). `qualityGate` reads `credibilityScore` and decides retry-or-disclaim same as today (`CREDIBILITY_THRESHOLD = 0.7` in `config.ts`).
 
+**`MIN_SOURCES_THRESHOLD` is removed from `qualityGate`.** Today the gate has two checks: minimum source count (3) and credibility threshold (0.7). The new credibility formula already accounts for source diversity, so a hard source-count floor is redundant and pessimistically rejects valid research where 2 highly-cited sources cover 8 claims. Migration step: delete the `sources.length < MIN_SOURCES_THRESHOLD` check in `qualityGate.ts:40-44` and remove the constant from `config.ts`. Credibility-only check remains.
+
+**`hasNoResearchMaterial` is left as-is but becomes dead in the new path.** The helper at `qualityGate.ts:19-27` returns true when both `sources.length === 0` and `sections.length === 0`. Under the new agent, that state can't reach `qualityGate` — if every subagent fails (floor not met) the agent returns `status: "failed"` directly and `routeAfterDeepResearch` short-circuits to END. So the disclaimer-vs-fail branch on line 71 of `qualityGate.ts` only fires for the "thin but real" research case. We're not removing the helper — it's safe and keeps the disclaimer-on-thin-research behavior — just noting it's a no-op for the no-material case under the new pipeline.
+
 ---
 
 ## Failure handling
@@ -386,7 +412,7 @@ const score = totalClaims === 0
 |---|---|---|---|
 | Planner | LLM error, JSON parse fail, fewer tasks than keyQuestions | structured-output validation | hard fail, status → failed |
 | Subagent (per-instance) | Throw OR `status: "failed"` | try/catch + status check | retry once, then drop |
-| Subagent (collective) | Dropped > ⌊N/2⌋ subagents | floor check after fan-out | hard fail with `errorMessage` |
+| Subagent (collective) | usable < ⌈N/2⌉ + 1 | floor check after fan-out | hard fail with `errorMessage` |
 | Tavily | Network error, rate-limit, 5xx | thrown from tool wrapper | bubbles up; subagent counts it as a used search and continues |
 | Synthesizer | LLM error, JSON parse fail | structured-output validation | retry once with same input; if still fails → hard fail with raw findings preserved |
 | Wallclock | Subagent > 90s OR overall > 4 min | `Promise.race` with timer | timeouts → failed (drop+retry) or hard fail (4-min cap) |
@@ -423,6 +449,19 @@ Two attempts max. Failure returns a typed `failed` record (never throws upward),
 
 ### Orchestrator floor + qualityGate integration
 
+**Floor formula:** `floor = Math.ceil(N / 2) + 1` — supermajority. Concrete values:
+
+| N (subagents) | Floor (must succeed) |
+|---|---|
+| 2 | 2 |
+| 3 | 3 |
+| 4 | 3 |
+| 5 | 4 |
+
+This is intentionally stricter than simple majority. Sparse research is a worse user experience than failing-with-refund.
+
+**Assumed N range: 3-5.** `briefBuilder` produces 3-5 keyQuestions per the existing `BRIEF_BUILDER_PROMPT` in `config.ts`. N=1 would degenerate (`floor=2` would always fail) but isn't a real scenario; if a future brief produces N<3, treat it as a planning failure and hard-fail before fan-out.
+
 ```typescript
 const results = await Promise.all(tasks.map(t => runSubagent(t, budget)));
 const usable = results.filter(r => r.status !== "failed");
@@ -433,7 +472,7 @@ if (usable.length < floor) {
   return {
     status: "failed",
     errorMessage: `Research insufficient: ${dropped.length} of ${tasks.length} angles failed`,
-    rawResearchResponse: { tasks, subagentFindings: results, model: MODEL_USED },
+    rawResearchResponse: { tasks, subagentFindings: results, model: { reasoning: RESEARCH_MODELS.reasoning, subagent: RESEARCH_MODELS.subagent } },
   };
 }
 
@@ -441,7 +480,7 @@ const synthesis = await synthesize(usable, dropped);
 return {
   researchDocument: synthesis,
   sources: synthesis.sources,
-  rawResearchResponse: { tasks, subagentFindings: results, model: MODEL_USED },
+  rawResearchResponse: { tasks, subagentFindings: results, model: { reasoning: RESEARCH_MODELS.reasoning, subagent: RESEARCH_MODELS.subagent } },
   credibilityScore,
   credibilityReport,
   status: "scripting",
@@ -455,9 +494,15 @@ The `status: "failed"` path is the same one o4-mini-deep-research uses today —
 1. **Per-subagent retry** (inside the new node): one retry per failed subagent before drop.
 2. **Pipeline-level retry** (`qualityGate`, unchanged): up to 2 retries of the entire research phase if credibility is low.
 
-`qualityGate` reads `state.researchIterations` and `state.credibilityReport` and the new agent honors them — the planner prompt injects them on retries:
+`qualityGate` reads `state.researchIterations` and `state.credibilityReport` and the new agent honors them. **The retry signal is read by the planner only** (not by subagents — subagents are stateless re-runs). When `state.researchIterations > 0`, the planner prompt receives:
 
-> Previous research had these gaps: {credibilityReport}. The dropped angles were: {droppedQuestions}. Focus on filling them.
+> Previous research had these gaps: {state.credibilityReport}. The dropped angles were: {state.researchDocument.droppedQuestions joined}. Focus on filling them — adjust your search hints accordingly.
+
+`droppedQuestions` lives inside `researchDocument` (the persisted output), not on top-level `PipelineState`. The planner reads `state.researchDocument?.droppedQuestions ?? []` — empty on first iteration since `researchDocument` is `{}` initially.
+
+The planner can then produce different `searchHints` per task than on the first attempt. Subagents see the new tasks and run fresh.
+
+**State cleanup on retry success.** The new agent's return value sets `errorMessage: null` on the success path so a previous failed-iteration's message doesn't leak into the final state. `credibilityReport` is overwritten on every iteration. `researchIterations` is incremented by `qualityGate` (unchanged behavior).
 
 Combined worst case: 3 attempts × 2 subagent retries each = up to 6 subagent invocations per failed angle. Bounded by per-subagent wallclock (90s) and pipeline wallclock (4 min).
 
@@ -504,7 +549,13 @@ Single PR. Sequence:
 
 1. Add deps + env vars.
 2. Build new `deepResearchAgent.ts` + supporting files.
-3. Replace `deepResearch` with `deepResearchAgent` in `graph.ts`. Delete `deepResearch.ts` and its test.
+3. Replace `deepResearch` with `deepResearchAgent` in `graph.ts`. Specifically:
+   - `addNode("deepResearch", ...)` → `addNode("deepResearchAgent", ...)`
+   - `addEdge("briefBuilder", "deepResearch")` → `addEdge("briefBuilder", "deepResearchAgent")`
+   - `addConditionalEdges("deepResearch", routeAfterDeepResearch)` → `addConditionalEdges("deepResearchAgent", routeAfterDeepResearch)`
+   - `routeAfterQualityGate` returns the retry target string `"deepResearch"` at `graph.ts:42` — update to `"deepResearchAgent"` so qualityGate's retry loop points at the new node.
+   - Update `nodes/index.ts` barrel export from `deepResearch` to `deepResearchAgent`.
+   - Delete `deepResearch.ts` and its test.
 4. Update `config.ts` — remove o4-mini constants (`DEEP_RESEARCH_PROMPT`, `DEEP_RESEARCH_POLL_INTERVAL`, `DEEP_RESEARCH_TIMEOUT`, `MAX_TOOL_CALLS`). Add `RESEARCH_MODELS`, `RESEARCH_BUDGETS`.
 5. Update `state.ts` — no field changes.
 6. Local smoke test on 2-3 representative topics.
@@ -606,6 +657,13 @@ Per-podcast estimate at Sonnet+Haiku, N=4 subagents:
 | **Total per podcast** | | **~$0.18** |
 
 vs. **$1.88 today** with o4-mini-deep-research. ~10x cost reduction at parity.
+
+**Worst case with retries (pro tier, all subagents fail twice + qualityGate fails twice + each synthesizer call retries once):**
+- 3 qualityGate iterations × (1 planner + 4 subagents × 2 retries × 5 searches each + 2 synthesizer attempts)
+- = 3 × (planner + 8 × subagent_invocations + 40 Tavily + 2 synthesizer)
+- ≈ $0.04 planner + $0.16 subagents + $0.84 Tavily + $0.42 synthesizer
+- = **~$1.46 worst case** for a podcast that ultimately fails or barely scrapes through.
+- A failed run refunds the credit via the existing DB trigger, so the worst case is bounded by our cost, not the user's.
 
 If quality regresses, swap reasoning model to GPT-4o or Sonnet 4.6 with thinking mode — cost climbs to ~$0.40, still 4x cheaper than today.
 
