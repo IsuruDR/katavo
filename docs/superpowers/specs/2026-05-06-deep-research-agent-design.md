@@ -134,11 +134,13 @@ interface SubagentFindings {
 **Loop shape (handled internally by deepagent):**
 
 ```
-think about the question → tavily_search(query)
-→ reflect: did this answer the question? what's missing?
-→ if reflection_count < maxReflections AND search_count < maxSearches: search again
+think about the question → tavily_search(query)        ← search_count++
+→ reflect: did this answer the question? what's missing?  ← reflection_count++
+→ if search_count < maxSearches AND reflection_count < maxReflections: continue loop
 → else: emit SubagentFindings
 ```
+
+**Counter relationship:** every search is followed by exactly one reflection (until budget exhausted). So `reflection_count` ≤ `search_count` always. The two budgets are nominally independent but in practice `maxReflections ≤ maxSearches` keeps the loop sensible. Per `RESEARCH_BUDGETS`: free `(2, 1)`, plus `(3, 2)`, pro `(5, 2)` — pro intentionally has more searches than reflections so the model can rapid-fire 3 starting queries before reflecting between rounds 4 and 5.
 
 ### Synthesizer
 
@@ -162,7 +164,7 @@ think about the question → tavily_search(query)
 1. Dedup sources across subagents (URL-keyed). **Ordering is deterministic: first-appearance order, where iteration is over `tasks[]` in planner order, then `findings[]` in subagent order, then `sourceUrls[]` in finding order.** This makes `sourceIndexes` stable across runs for the same input + makes test assertions on indexes deterministic.
 2. Re-index `sourceUrls` from each subagent's findings into the deduped `sources` array.
 3. Group claims into 4-6 sections — one section per major topic angle. Sections are NOT 1:1 with `keyQuestions`; related questions may belong in one section.
-4. Write each section's `content` as cited prose, weaving claims with `[N]` markers. Output is what `scriptWriter` consumes today.
+4. Write each section's `content` as cited prose, weaving claims with **`[N]` markers where N is a 1-indexed position into the deduped `sources[]` array** (e.g. `[1]` is `sources[0]`, `[1][2]` is sources 0 and 1 together). The synthesizer prompt must spell this out explicitly, including a worked mini-example. `scriptWriter` already consumes this format from today's output (existing prompt strips citation markers when generating audio).
 5. If any subagent was dropped, include the question(s) in `droppedQuestions`. Synthesizer prose acknowledges the gap, doesn't hallucinate around it.
 
 ### Search tool — `tavily_search`
@@ -203,7 +205,7 @@ async function makeTavilyTool({ taskId, maxSearches }) {
 }
 ```
 
-One tool instance per subagent — closure captures `searchCount` so budget is per-subagent, not pipeline-wide.
+One tool instance per subagent — closure captures `searchCount` so budget is per-subagent, not pipeline-wide. Concretely: `runSubagent(task, opts)` calls `makeTavilyTool({ taskId: task.id, maxSearches: opts.maxSearches })` to get a fresh tool, then passes `tools: [tavilyTool]` to a fresh `createDeepAgent(...)` call. Both the deepagent and its tool live for the duration of one subagent invocation only.
 
 ---
 
@@ -241,6 +243,19 @@ These are exported from `config.ts` as `RESEARCH_TEMPERATURES` so eval scripts c
 
 ```typescript
 export const RESEARCH_TEMPERATURES = { planner: 0.0, synthesizer: 0.1, subagent: 0.4 } as const;
+```
+
+**Wiring at call sites:**
+
+```typescript
+// nodes/research/planner.ts
+const llm = makeOpenRouterModel(RESEARCH_MODELS.reasoning, { temperature: RESEARCH_TEMPERATURES.planner });
+
+// nodes/research/synthesizer.ts
+const llm = makeOpenRouterModel(RESEARCH_MODELS.reasoning, { temperature: RESEARCH_TEMPERATURES.synthesizer });
+
+// nodes/research/subagent.ts
+const llm = makeOpenRouterModel(RESEARCH_MODELS.subagent, { temperature: RESEARCH_TEMPERATURES.subagent });
 ```
 
 **Two layers of override:**
@@ -679,8 +694,12 @@ If quality regresses, swap reasoning model to GPT-4o or Sonnet 4.6 with thinking
 | Subagent respects maxSearches | Mock Tavily; assert tool returns budget_exceeded after Nth call |
 | Floor enforcement | Mock 3 of 4 subagents to fail; assert status: failed with errorMessage |
 | Source dedup | Two subagents return overlapping URLs; assert deduped sources array |
+| Source ordering deterministic | Two subagents with interleaved URLs; assert order = first-appearance via tasks → findings → sourceUrls |
 | Credibility score on full data | totalClaims=10, citedClaims=10, sourceDiversity=1 → score=1.0 |
 | Credibility score on uncited claims | totalClaims=10, citedClaims=5 → score < 0.7, qualityGate retries |
+| Credibility score on empty research | totalClaims=0 → score=0 |
+| `errorMessage` cleared on retry success | Mock first iteration to fail (low credibility), second to succeed; assert final state has `errorMessage: null` |
+| Planner reads `droppedQuestions` on retry | Mock state with `researchDocument.droppedQuestions = ["Q1"]` and `researchIterations = 1`; assert planner prompt includes "Q1" |
 | End-to-end smoke (espresso topic) | Eyeball output; cited claims trace to real sources |
 | End-to-end smoke (fusion topic) | Sources are 2024+; recency check |
 | End-to-end smoke (mitochondrial DNA) | Dense factual content, every claim cited |
