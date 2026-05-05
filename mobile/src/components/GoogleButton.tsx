@@ -1,7 +1,12 @@
 /**
  * Google-branded sign-in button. White pill with hairline border, color "G"
- * mark on the left and "Continue with Google" label centered. Matches the
- * project's pill button shape (56pt height, 999 corner radius).
+ * mark and "Continue with Google" label centered as a group — same visual
+ * cadence as the Apple button native control sitting next to it.
+ *
+ * Uses system font (San Francisco on iOS, Roboto on Android) instead of
+ * Plex so it reads as a sibling of the AppleAuthenticationButton, which
+ * we can't reskin. The rest of the app keeps Plex; this is a deliberate
+ * exception for the social-auth section.
  *
  * The "G" mark is rendered as text inline with brand color — sufficient
  * for v1 and dependency-free. Swap to an SVG when we have a proper
@@ -9,7 +14,7 @@
  */
 
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { color, font } from "../theme/tokens";
+import { color } from "../theme/tokens";
 
 interface Props {
   onPress: () => void;
@@ -31,8 +36,7 @@ export function GoogleButton({ onPress, disabled = false }: Props) {
     >
       <View style={styles.row}>
         <Text style={styles.glyph}>G</Text>
-        <Text style={styles.label}>Continue with Google</Text>
-        <View style={styles.glyphSpacer} />
+        <Text style={styles.label}>Sign in with Google</Text>
       </View>
     </Pressable>
   );
@@ -46,29 +50,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.hairlineStrong,
     justifyContent: "center",
-    paddingHorizontal: 20,
+    alignItems: "center",
   },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.5 },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 10,
   },
   glyph: {
-    fontFamily: font.sansSemiBold,
-    fontSize: 22,
+    // System font to match the Apple-native button next to it.
+    fontSize: 20,
+    fontWeight: "700",
     color: "#4285F4",
-    width: 24,
-    textAlign: "center",
   },
-  glyphSpacer: { width: 24 },
   label: {
-    fontFamily: font.sansSemiBold,
-    fontSize: 17,
+    fontSize: 19,
+    fontWeight: "600",
     color: color.ink,
-    flex: 1,
-    textAlign: "center",
-    letterSpacing: -0.1,
+    letterSpacing: -0.4,
   },
 });
