@@ -26,6 +26,7 @@
     "@langfuse/langchain": "^5.1.0",
     "@resvg/resvg-js": "^2.6.2",
     "@supabase/supabase-js": "^2.0.0",
+    "@tavily/core": "^0.7.3",
     "dotenv": "^16.4.0",
     "hono": "^4.12.12",
     "langfuse": "^3.38.20",
