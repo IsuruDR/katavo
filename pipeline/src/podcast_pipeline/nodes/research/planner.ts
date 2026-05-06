@@ -22,12 +22,21 @@ export interface PlannerInput {
   droppedQuestions?: string[];
 }
 
+/** Strip optional ```json fences before JSON.parse — some models wrap output in markdown. */
+function parseBrief(raw: string): { keyQuestions?: string[] } {
+  const stripped = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "");
+  return JSON.parse(stripped) as { keyQuestions?: string[] };
+}
+
 export async function runPlanner(
   researchBrief: string,
   ctx: PlannerInput,
   config?: RunnableConfig,
 ): Promise<SubagentTask[]> {
-  const brief = JSON.parse(researchBrief) as { keyQuestions?: string[] };
+  const brief = parseBrief(researchBrief);
   const keyQuestions = brief.keyQuestions ?? [];
   if (keyQuestions.length < 3) {
     throw new Error(`Planner requires at least 3 keyQuestions in brief, got ${keyQuestions.length}`);
