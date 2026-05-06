@@ -9,7 +9,7 @@
 
 import OpenAI from "openai";
 import { observeOpenAI } from "langfuse";
-import { CallbackHandler } from "@langfuse/langchain";
+import { CallbackHandler } from "langfuse-langchain";
 
 let observedClient: OpenAI | null = null;
 

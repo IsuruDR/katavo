@@ -40,8 +40,12 @@ describe.skipIf(!RUN_LIVE_RESEARCH)("deepResearchAgent (live, gated)", () => {
       const { getLangfuseCallbackHandler } = await import(
         "../../src/podcast_pipeline/providers/langfuseClient.js"
       );
-      const callbacks = process.env.LANGFUSE_PUBLIC_KEY ? [getLangfuseCallbackHandler()] : [];
+      const handler = process.env.LANGFUSE_PUBLIC_KEY ? getLangfuseCallbackHandler() : null;
+      const callbacks = handler ? [handler] : [];
       const result = await deepResearchAgent(state, { callbacks });
+      // Flush queued spans before vitest tears down the process — without this,
+      // Langfuse's batched send loses everything when the test exits.
+      if (handler) await (handler as any).flushAsync();
       expect(result.status).toBe("scripting");
       expect(result.researchDocument).toBeDefined();
       const doc = result.researchDocument as any;
