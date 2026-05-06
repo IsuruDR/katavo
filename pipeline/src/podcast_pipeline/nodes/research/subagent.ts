@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { createDeepAgent } from "deepagents";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
 import { makeTavilyTool } from "../../tools/tavilySearch.js";
 import { RESEARCH_MODELS, RESEARCH_TEMPERATURES, SUBAGENT_WALLCLOCK_MS } from "../../config.js";
@@ -45,11 +45,13 @@ async function invokeOnce(task: SubagentTask, opts: SubagentBudget): Promise<Sub
     .replace("{context}", task.context)
     .replace("{searchHints}", task.searchHints.join("; "));
 
-  const agent = createReactAgent({
-    llm,
+  const agent = createDeepAgent({
+    model: llm,
     tools: [tool] as any,
-    prompt: systemPrompt,
-    responseFormat: SubagentFindingsSchema,
+    systemPrompt,
+    // deepagents internally uses zod/v4; our schema is zod/v3. Cast at the
+    // boundary — runtime accepts both, only the type system disagrees.
+    responseFormat: SubagentFindingsSchema as any,
   });
 
   const result = (await agent.invoke({

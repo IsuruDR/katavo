@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockInvoke = vi.hoisted(() => vi.fn());
-const mockCreateReactAgent = vi.hoisted(() => vi.fn(() => ({ invoke: mockInvoke })));
+const mockCreateDeepAgent = vi.hoisted(() => vi.fn(() => ({ invoke: mockInvoke })));
 const mockMakeTavilyTool = vi.hoisted(() => vi.fn(() => ({ name: "tavily_search" })));
 const mockChatOpenAI = vi.hoisted(() => vi.fn().mockImplementation(() => ({})));
 
-vi.mock("@langchain/langgraph/prebuilt", () => ({ createReactAgent: mockCreateReactAgent }));
+vi.mock("deepagents", () => ({ createDeepAgent: mockCreateDeepAgent }));
 vi.mock("../src/podcast_pipeline/tools/tavilySearch.js", () => ({ makeTavilyTool: mockMakeTavilyTool }));
 vi.mock("@langchain/openai", () => ({ ChatOpenAI: mockChatOpenAI }));
 
