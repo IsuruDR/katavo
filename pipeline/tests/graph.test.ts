@@ -59,12 +59,12 @@ describe("routeAfterQualityGate", () => {
     expect(result).toBe("__end__");
   });
 
-  it("retries deepResearch when shouldRetry=true", () => {
+  it("retries deepResearchAgent when shouldRetry=true", () => {
     const result = routeAfterQualityGate({
       status: "scripting",
       shouldRetry: true,
     } as any);
-    expect(result).toBe("deepResearch");
+    expect(result).toBe("deepResearchAgent");
   });
 
   it("routes to scriptWriter on pass", () => {

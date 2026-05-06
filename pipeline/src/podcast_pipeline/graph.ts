@@ -1,7 +1,7 @@
 /**
  * Main LangGraph graph definition -- wires all nodes together.
  *
- * Pipeline: briefBuilder -> deepResearch -> qualityGate -> scriptWriter
+ * Pipeline: briefBuilder -> deepResearchAgent -> qualityGate -> scriptWriter
  *           -> adInjector (if ads) -> audioProducer -> metadataWriter
  */
 
@@ -9,7 +9,7 @@ import { StateGraph, END } from "@langchain/langgraph";
 import { PipelineState, makeInitialState } from "./state.js";
 import type { PipelineStateType } from "./state.js";
 import { briefBuilder } from "./nodes/briefBuilder.js";
-import { deepResearch } from "./nodes/deepResearch.js";
+import { deepResearchAgent } from "./nodes/deepResearchAgent.js";
 import { qualityGate } from "./nodes/qualityGate.js";
 import { scriptWriter } from "./nodes/scriptWriter.js";
 import { adInjector } from "./nodes/adInjector.js";
@@ -21,10 +21,10 @@ import { getLangfuseCallbackHandler } from "./providers/langfuseClient.js";
 const DEFAULT_FAILURE_MESSAGE = "Pipeline failed";
 
 /**
- * If deepResearch came back with status="failed" (rate-limited, content
- * rejected, polling timeout, etc.), short-circuit to END instead of
+ * If deepResearchAgent came back with status="failed" (planner failure,
+ * floor not met, synthesizer hard fail), short-circuit to END instead of
  * letting qualityGate run on empty state. qualityGate's retry-or-disclaim
- * loop is for low-quality research, not no-API-response research.
+ * loop is for low-credibility research, not no-research-at-all.
  */
 export function routeAfterDeepResearch(state: PipelineStateType): string {
   if (state.status === "failed") {
@@ -38,7 +38,7 @@ export function routeAfterQualityGate(state: PipelineStateType): string {
     return END;
   }
   if (state.shouldRetry) {
-    return "deepResearch";
+    return "deepResearchAgent";
   }
   return "scriptWriter";
 }
@@ -55,15 +55,15 @@ export function routeAfterScript(state: PipelineStateType): string {
 
 const workflow = new StateGraph(PipelineState)
   .addNode("briefBuilder", briefBuilder)
-  .addNode("deepResearch", deepResearch)
+  .addNode("deepResearchAgent", deepResearchAgent)
   .addNode("qualityGate", qualityGate)
   .addNode("scriptWriter", scriptWriter)
   .addNode("adInjector", adInjector)
   .addNode("audioProducer", audioProducer)
   .addNode("metadataWriter", metadataWriter)
   .addEdge("__start__", "briefBuilder")
-  .addEdge("briefBuilder", "deepResearch")
-  .addConditionalEdges("deepResearch", routeAfterDeepResearch)
+  .addEdge("briefBuilder", "deepResearchAgent")
+  .addConditionalEdges("deepResearchAgent", routeAfterDeepResearch)
   .addConditionalEdges("qualityGate", routeAfterQualityGate)
   .addConditionalEdges("scriptWriter", routeAfterScript)
   .addEdge("adInjector", "audioProducer")

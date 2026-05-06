@@ -29,7 +29,6 @@ export const SUBAGENT_WALLCLOCK_MS = 90_000;
 // Quality gate
 export const CREDIBILITY_THRESHOLD = 0.7;
 export const MAX_RESEARCH_RETRIES = 2;
-export const MIN_SOURCES_THRESHOLD = 3;
 
 // Deep research
 export const MAX_TOOL_CALLS: Record<string, number> = {

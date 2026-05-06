@@ -23,23 +23,6 @@ describe("qualityGate", () => {
     expect(result.researchIterations).toBe(1);
   });
 
-  it("should retry when sources are below minimum threshold", () => {
-    const state = {
-      credibilityScore: 0.85,
-      researchIterations: 0,
-      sources: [
-        { url: "https://a.com", title: "A" },
-      ],
-      researchDocument: { sections: [{ title: "Test", content: "Content" }] },
-      researchBrief: '{"keyQuestions":["q1"]}',
-    };
-
-    const result = qualityGate(state as any);
-
-    expect(result.shouldRetry).toBe(true);
-    expect(result.credibilityReport).toContain("Insufficient sources");
-  });
-
   it("should retry when credibility score is below threshold", () => {
     const state = {
       credibilityScore: 0.5,

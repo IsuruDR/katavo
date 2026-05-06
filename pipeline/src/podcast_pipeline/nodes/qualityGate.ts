@@ -3,11 +3,7 @@
  * No LLM call; the Deep Research API already produces well-cited research.
  */
 
-import {
-  CREDIBILITY_THRESHOLD,
-  MAX_RESEARCH_RETRIES,
-  MIN_SOURCES_THRESHOLD,
-} from "../config.js";
+import { CREDIBILITY_THRESHOLD, MAX_RESEARCH_RETRIES } from "../config.js";
 import type { PipelineStateType } from "../state.js";
 
 /**
@@ -31,19 +27,12 @@ export function qualityGate(
 ): Partial<PipelineStateType> {
   const score = state.credibilityScore ?? 0.0;
   const iterations = state.researchIterations ?? 0;
-  const sources = state.sources ?? [];
   const newIterations = iterations + 1;
 
   const gaps: string[] = [];
 
-  // Check 1: Minimum source count
-  if (sources.length < MIN_SOURCES_THRESHOLD) {
-    gaps.push(
-      `Insufficient sources: found ${sources.length}, need at least ${MIN_SOURCES_THRESHOLD}`,
-    );
-  }
-
-  // Check 2: Credibility score threshold
+  // Credibility score threshold (v11+: source-count gate removed; the new
+  // credibility formula already weights source diversity into the score.)
   if (score < CREDIBILITY_THRESHOLD) {
     gaps.push(
       `Credibility score ${score.toFixed(2)} is below threshold ${CREDIBILITY_THRESHOLD}`,
