@@ -30,33 +30,6 @@ export const SUBAGENT_WALLCLOCK_MS = 90_000;
 export const CREDIBILITY_THRESHOLD = 0.7;
 export const MAX_RESEARCH_RETRIES = 2;
 
-// Deep research
-export const MAX_TOOL_CALLS: Record<string, number> = {
-  free: 20,
-  plus: 20,
-  pro: 40,
-};
-export const DEEP_RESEARCH_POLL_INTERVAL = 10_000; // 10s between polls
-export const DEEP_RESEARCH_TIMEOUT = 900_000; // 15 minutes
-
-export const DEEP_RESEARCH_PROMPT = `You are conducting deep research for a podcast episode.
-Given a research brief, produce a comprehensive, well-cited research document.
-
-Structure your output as a JSON object with:
-- "sections": list of {{"title": string, "content": string}} — 3-6 sections covering the topic thoroughly with inline citations
-- "sources": list of {{"url": string, "title": string}} — all sources referenced
-
-Requirements:
-- Every factual claim must cite at least one source
-- Cover the topic from multiple angles
-- Prioritize recent, authoritative sources
-- Include specific data, statistics, and expert quotes where available
-{trustedSourceContext}
-{retryContext}
-
-Research brief:
-{researchBrief}
-`;
 
 // Script targets
 export const TARGET_WORD_COUNT = 2200; // bumped from 1500 — model reliably undershoots; aim high to land ~1500
