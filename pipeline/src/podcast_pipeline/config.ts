@@ -2,6 +2,30 @@
  * Pipeline configuration — prompts, thresholds, and constants.
  */
 
+// Research agent (v11+) — replaces o4-mini-deep-research
+export const RESEARCH_MODELS = {
+  reasoning: process.env.RESEARCH_REASONING_MODEL ?? "anthropic/claude-sonnet-4.6",
+  subagent: process.env.RESEARCH_SUBAGENT_MODEL ?? "anthropic/claude-haiku-4.5",
+} as const;
+
+export const RESEARCH_TEMPERATURES = {
+  planner: 0.0,
+  synthesizer: 0.1,
+  subagent: 0.4,
+} as const;
+
+export const RESEARCH_BUDGETS: Record<string, { maxSearches: number; maxReflections: number }> = {
+  free: { maxSearches: 2, maxReflections: 1 },
+  plus: { maxSearches: 3, maxReflections: 2 },
+  pro: { maxSearches: 5, maxReflections: 2 },
+};
+
+export const SUBAGENT_WALLCLOCK_MS = 90_000;
+// Note: pipeline-level wallclock is not enforced as a constant. Per-subagent
+// (90s) is the only wallclock; with N <= 5 + sequential planner/synthesizer,
+// total bound is naturally ~3 min. If we want a hard pipeline cap later,
+// add it here and wrap deepResearchAgent body in Promise.race.
+
 // Quality gate
 export const CREDIBILITY_THRESHOLD = 0.7;
 export const MAX_RESEARCH_RETRIES = 2;

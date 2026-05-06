@@ -24,7 +24,7 @@ export function makeTavilyTool(opts: TavilyToolOpts) {
       try {
         const res: any = await client.search(query, {
           searchDepth: "advanced",
-          includeRawContent: true,
+          includeRawContent: "text",
           maxResults: 5,
         });
         return {
