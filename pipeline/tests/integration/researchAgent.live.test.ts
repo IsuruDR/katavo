@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { describe, it, expect } from "vitest";
 
 const RUN_LIVE_RESEARCH = process.env.RUN_LIVE_RESEARCH === "1";
