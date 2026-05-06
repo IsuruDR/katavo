@@ -1323,7 +1323,7 @@ export async function deepResearchAgent(
 cd pipeline && npx vitest run tests/deepResearchAgent.test.ts
 ```
 
-Expected: 4 passed.
+Expected: 6 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1363,9 +1363,8 @@ export { handlePipelineFailure } from "./errorHandler.js";
 In `pipeline/src/podcast_pipeline/graph.ts`:
 
 - Replace `import { deepResearch }` with `import { deepResearchAgent }`.
-- Replace all 3 occurrences of the node name `"deepResearch"` with `"deepResearchAgent"` (in `addNode`, `addEdge`, `addConditionalEdges`).
-- In `routeAfterQualityGate`, change `return "deepResearch"` to `return "deepResearchAgent"`.
-- The function `routeAfterDeepResearch` keeps its name (no rename per spec) but **update its docstring** if it references the deprecated node name in prose.
+- Update all 3 graph-builder call sites (`addNode("deepResearch", ...)`, `addEdge("briefBuilder", "deepResearch")`, `addConditionalEdges("deepResearch", ...)`) plus the `routeAfterQualityGate` return-string from `"deepResearch"` to `"deepResearchAgent"`. **4 string replacements total.**
+- The function `routeAfterDeepResearch` keeps its name (no rename per spec). Its existing docstring (`graph.ts` lines ~22-28) currently says "If deepResearch came back…" — rewrite to "If deepResearchAgent came back…" so the prose matches the new node.
 
 - [ ] **Step 3: Update `qualityGate.ts` — remove MIN_SOURCES_THRESHOLD check**
 
@@ -1514,6 +1513,9 @@ describe.skipIf(!RUN_LIVE_RESEARCH)("deepResearchAgent (live, gated)", () => {
   it("produces a valid research_document for the smoke topic", async () => {
     const { deepResearchAgent } = await import("../../src/podcast_pipeline/nodes/deepResearchAgent.js");
     const topic = process.env.SMOKE_TOPIC ?? "history of espresso machines";
+    // N=4 keyQuestions intentionally — floor for N=4 is 3, so the test tolerates
+    // one dropped subagent (real Tavily flakiness). N=3 would require all to
+    // succeed and turn every gated $0.20 run into a coin flip.
     const brief = process.env.SMOKE_BRIEF ?? JSON.stringify({
       scope: "Origins and evolution of espresso machines from 1900 to today",
       angle: "engaging history with key inventors and technical milestones",
@@ -1522,6 +1524,7 @@ describe.skipIf(!RUN_LIVE_RESEARCH)("deepResearchAgent (live, gated)", () => {
         "Who invented the first espresso machine?",
         "What were the major technical milestones in espresso machine evolution?",
         "Which manufacturers shaped the modern espresso market?",
+        "How did espresso culture spread beyond Italy?",
       ],
     });
     const state = {
