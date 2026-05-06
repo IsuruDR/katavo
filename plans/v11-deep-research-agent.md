@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace OpenAI `o4-mini-deep-research` API with self-hosted research agent (LangGraph + deepagents + Tavily over OpenRouter). Hard cutover, single PR, no flag.
+**Goal:** Replace OpenAI `o4-mini-deep-research` API with self-hosted research agent (LangGraph `createReactAgent` + Tavily over OpenRouter). Hard cutover, single PR, no flag.
 
 **Architecture:** New `deepResearchAgent` node = subgraph (planner → N parallel subagents fanned out via `Send` → synthesizer). Each subagent is a deepagent with `tavily_search` tool, hard-capped per-tier search/reflection budget. Output additive `claims[]` field on `research_document`. Floor formula `usable >= ⌈N/2⌉+1`; per-subagent retry once. Models routed through OpenRouter via env vars + per-invocation `configurable` overrides.
 
-**Tech Stack:** TypeScript, vitest, LangGraph.js (`@langchain/langgraph`), `deepagents`, `@tavily/core`, OpenRouter (via `@langchain/openai` with custom baseURL), Langfuse for observability.
+**Tech Stack:** TypeScript, vitest, LangGraph.js (`@langchain/langgraph` + `@langchain/langgraph/prebuilt` for `createReactAgent`), `@tavily/core`, OpenRouter (via `@langchain/openai` with custom baseURL), Langfuse for observability.
 
 **Spec:** `docs/superpowers/specs/2026-05-06-deep-research-agent-design.md`
 
@@ -18,32 +18,34 @@ All test code below uses `vi.hoisted(() => vi.fn())` for any mock function decla
 
 ## Chunk 1: Foundation — deps, env, providers, search tool
 
-### Task 1: Install dependencies
+### Task 1: Install Tavily SDK
 
 **Files:**
 - Modify: `pipeline/package.json`
 
-- [ ] **Step 1: Install deepagents and Tavily SDK**
+> **Note (post-execution amendment):** Originally this task installed both `deepagents` and `@tavily/core`. The deepagents 1.x line requires `@langchain/core ^1.x`; we run on 0.3. The 0.0.x line requires `@langchain/langgraph ^0.4.6`; we run on 0.2.74. Neither is compatible without a major LangChain stack upgrade, which is out of scope. Subagent now uses `createReactAgent` from `@langchain/langgraph/prebuilt` (already installed). See spec section "Why raw LangGraph everywhere" for full rationale.
+
+- [ ] **Step 1: Install Tavily SDK**
 
 ```bash
-cd "pipeline" && npm install deepagents @tavily/core
+cd "pipeline" && npm install @tavily/core
 ```
 
-Expected: `package.json` shows both as deps, `package-lock.json` updated. No peer-dep errors.
+Expected: `package.json` shows `@tavily/core` as dep, `package-lock.json` updated.
 
 - [ ] **Step 2: Verify install**
 
 ```bash
-cd pipeline && node -e "require('deepagents'); require('@tavily/core'); console.log('ok')"
+cd pipeline && node -e "require('@tavily/core'); console.log('ok')"
 ```
 
-Expected: prints `ok`. If error, check Node version (need ≥ 20).
+Expected: prints `ok`.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add pipeline/package.json pipeline/package-lock.json
-git commit -m "deps: add deepagents + @tavily/core for self-hosted research agent"
+git commit -m "deps: add @tavily/core for self-hosted research agent"
 ```
 
 ---
@@ -688,11 +690,11 @@ Create `pipeline/tests/subagent.test.ts`:
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockInvoke = vi.hoisted(() => vi.fn());
-const mockCreateDeepAgent = vi.hoisted(() => vi.fn(() => ({ invoke: mockInvoke })));
+const mockCreateReactAgent = vi.hoisted(() => vi.fn(() => ({ invoke: mockInvoke })));
 const mockMakeTavilyTool = vi.hoisted(() => vi.fn(() => ({ name: "tavily_search" })));
 const mockChatOpenAI = vi.hoisted(() => vi.fn().mockImplementation(() => ({})));
 
-vi.mock("deepagents", () => ({ createDeepAgent: mockCreateDeepAgent }));
+vi.mock("@langchain/langgraph/prebuilt", () => ({ createReactAgent: mockCreateReactAgent }));
 vi.mock("../src/podcast_pipeline/tools/tavilySearch.js", () => ({ makeTavilyTool: mockMakeTavilyTool }));
 vi.mock("@langchain/openai", () => ({ ChatOpenAI: mockChatOpenAI }));
 
@@ -779,7 +781,7 @@ Expected: FAIL with module-not-found.
 
 ```typescript
 import { z } from "zod";
-import { createDeepAgent } from "deepagents";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
 import { makeTavilyTool } from "../../tools/tavilySearch.js";
 import { RESEARCH_MODELS, RESEARCH_TEMPERATURES, SUBAGENT_WALLCLOCK_MS } from "../../config.js";
@@ -823,17 +825,17 @@ async function invokeOnce(task: SubagentTask, opts: SubagentBudget): Promise<Sub
     .replace("{context}", task.context)
     .replace("{searchHints}", task.searchHints.join("; "));
 
-  const agent = createDeepAgent({
-    model: llm,
+  const agent = createReactAgent({
+    llm,
     tools: [tool],
-    instructions: systemPrompt,
+    stateModifier: systemPrompt,
     responseFormat: SubagentFindingsSchema,
   } as any);
 
   const result = await agent.invoke({
     messages: [{ role: "user", content: taskMessage }],
   });
-  // deepagents returns the structured payload under structuredResponse when responseFormat is set
+  // createReactAgent returns the structured payload under structuredResponse when responseFormat is set
   return result.structuredResponse as SubagentFindings;
 }
 
@@ -863,7 +865,7 @@ export async function runSubagent(task: SubagentTask, opts: SubagentBudget): Pro
 }
 ```
 
-Note: `responseFormat`/`structuredResponse` is the deepagents v0.x convention for typed final output. If the installed version uses a different API (`outputSchema`, etc.), adjust accordingly — the test mocks the result shape so the contract is what matters.
+Note: `responseFormat`/`structuredResponse` is the `createReactAgent` v0.2.x convention for typed final output. The exact key on the returned object may be `structuredResponse` or similar — check the installed version's typings. The test mocks the result shape so the contract is what matters; if the runtime key differs, adjust the impl's last line accordingly.
 
 - [ ] **Step 4: Run test to confirm pass**
 
@@ -1473,7 +1475,7 @@ Create `supabase/migrations/00015_research_raw_response_comment.sql`:
 ```sql
 -- 00015_research_raw_response_comment.sql
 -- Update column comment to reflect new shape after v11 deep research agent
--- replaced o4-mini-deep-research with self-hosted LangGraph + deepagents.
+-- replaced o4-mini-deep-research with self-hosted LangGraph (createReactAgent + Tavily).
 COMMENT ON COLUMN public.research_contexts.raw_response IS
   'Subagent findings array from deep research agent: { tasks, subagentFindings, model }. Used by deep-dive feature for granular per-claim source access.';
 ```

@@ -62,10 +62,10 @@ flowchart TD
 |---|---|---|
 | Outer subgraph | Raw LangGraph (`StateGraph`, `Send`) | Orchestrate fan-out, enforce floor, retry failed subagents, route to synthesizer or fail |
 | Planner | Single Sonnet 4.6 call with structured output | Decompose brief → `SubagentTask[]` (one per keyQuestion) |
-| Subagent (×N) | `createDeepAgent` from deepagentsjs, Haiku 4.5 + Tavily tool | Search-reflect-search loop, output structured findings |
+| Subagent (×N) | `createReactAgent` from `@langchain/langgraph/prebuilt`, Haiku 4.5 + Tavily tool | Search-reflect-search loop, output structured findings |
 | Synthesizer | Single Sonnet 4.6 call with structured output | Merge findings → `{sections, sources, claims}` matching today's persistence shape |
 
-**Why hybrid (raw LangGraph orchestration + deepagent subagents):** Static fan-out (N = `keyQuestions.length`) doesn't fit deepagents' dynamic spawning model — we'd be expressing deterministic requirements through a non-deterministic abstraction. But deepagents has tuned prompts and patterns for the search-reflect-search loop that we'd be reinventing if we built subagents on raw `createReactAgent`. We borrow framework value where their tuning matters most, keep raw control where our requirements (M/N floor, retry-once, dropped-question reporting) need it.
+**Why raw LangGraph everywhere (revised from earlier hybrid):** The original design called for deepagents subagents inside raw-LangGraph orchestration. During execution we discovered deepagents 1.x requires `@langchain/core ^1.1.x` and `@langchain/langgraph ^1.x`, while the rest of our pipeline runs on the 0.3 / 0.2 line. A full LangChain v1 migration is out of scope. The older deepagents 0.0.2 still requires `@langchain/langgraph ^0.4.6` — also a breaking jump from our 0.2.74. Since we'd already written our own subagent system prompt, the framework's "tuned prompts" rationale evaporated. We use `createReactAgent` from `@langchain/langgraph/prebuilt` (already installed in 0.2.74) for the subagent search-reflect loop. Same behavior as the planned hybrid, fewer deps, no peer-dep churn.
 
 **Position in the pipeline graph:** unchanged. `routeAfterDeepResearch` (`graph.ts:29`) keeps working — if the subgraph sets `status: "failed"`, route to END.
 
@@ -126,7 +126,7 @@ interface SubagentFindings {
 
 **Model:** `RESEARCH_SUBAGENT_MODEL` (default `anthropic/claude-haiku-4.5`).
 
-**Built via:** `createDeepAgent` from `deepagentsjs`. Tools: just `tavily_search` (wrapped with budget enforcement, see Search Tool). System prompt borrows deepagents' research-agent prompt, modified to:
+**Built via:** `createReactAgent` from `@langchain/langgraph/prebuilt`. Tools: just `tavily_search` (wrapped with budget enforcement, see Search Tool). Structured output enforced via `responseFormat` (createReactAgent's typed-final-output mechanism in langgraph 0.2). System prompt is custom (we never relied on framework defaults), modified to:
 - Emit our `SubagentFindings` schema.
 - Respect `maxSearches`/`maxReflections` budget (soft prompt guidance + hard tool-layer enforcement).
 - Cite every factual claim with at least one source URL drawn from search results.
@@ -205,7 +205,7 @@ async function makeTavilyTool({ taskId, maxSearches }) {
 }
 ```
 
-One tool instance per subagent — closure captures `searchCount` so budget is per-subagent, not pipeline-wide. Concretely: `runSubagent(task, opts)` calls `makeTavilyTool({ taskId: task.id, maxSearches: opts.maxSearches })` to get a fresh tool, then passes `tools: [tavilyTool]` to a fresh `createDeepAgent(...)` call. Both the deepagent and its tool live for the duration of one subagent invocation only.
+One tool instance per subagent — closure captures `searchCount` so budget is per-subagent, not pipeline-wide. Concretely: `runSubagent(task, opts)` calls `makeTavilyTool({ taskId: task.id, maxSearches: opts.maxSearches })` to get a fresh tool, then passes `tools: [tavilyTool]` to a fresh `createReactAgent({ llm, tools, responseFormat })` call. Both the agent and its tool live for the duration of one subagent invocation only.
 
 ---
 
