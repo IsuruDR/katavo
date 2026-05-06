@@ -106,7 +106,25 @@ export const AUDIO_TAGS =
 
 To change tags in production: edit `AUDIO_TAGS=...` on Railway and restart. No code push.
 
-**Failure handling:** if `tagInjector` fails (Gemini error, malformed output, prompt rejection), fall through with `state.taggedScript = state.script` (original script, no tags). The `audioProducer` then synthesizes plain audio without inline cues — degraded but functional.
+**Empty `AUDIO_TAGS` resolves to defaults** — the `?? AUDIO_TAGS_DEFAULT` fallback only triggers when the env var is unset. If it's set to an empty string or just commas (typo), `.split.map.filter(Boolean)` produces `[]` and `?? `won't catch that. Guard:
+
+```typescript
+const parsed = process.env.AUDIO_TAGS?.split(",").map(s => s.trim()).filter(Boolean);
+export const AUDIO_TAGS = parsed && parsed.length > 0 ? parsed : [...AUDIO_TAGS_DEFAULT];
+```
+
+If a future user nukes the env var, we fall back rather than feeding an empty list to the model and getting silent improvisation.
+
+**Failure handling — concrete validation gates (in order):**
+
+1. **SDK error** (network, auth, rate-limit, refusal): `try/catch` around the Gemini call. On catch → fall through with `taggedScript = script`.
+2. **Empty output**: if model returns empty/whitespace string → fall through with `taggedScript = script`.
+3. **Chapter-marker preservation check**: count `[CHAPTER:` occurrences in input vs output. If they differ → fall through with `taggedScript = script` (model dropped/added chapters, can't trust output).
+4. **Pass-through if any check fails**, log a `console.warn` at `[tagInjector] fallthrough` with the reason.
+
+We do **NOT** validate that only allowlisted tags appear, do **NOT** strip unknown tags. If the model occasionally inserts a tag outside `AUDIO_TAGS` (e.g., `[grins]`), Gemini TTS either ignores it or interprets it loosely — empirically benign, and trying to filter introduces brittle regex maintenance.
+
+We do **NOT** validate that text content is byte-identical to input; the model can lightly punctuate or shift whitespace and that's fine. The chapter-marker count is the single structural invariant.
 
 ### 2. audioProducer node (replaced)
 
@@ -116,39 +134,42 @@ To change tags in production: edit `AUDIO_TAGS=...` on Railway and restart. No c
 
 **Model:** `gemini-2.5-flash-preview-tts` via the Google Gen AI SDK.
 
-**Per-chapter generation:**
+**Chunking (unchanged from current behavior):**
 
-Same per-chapter chunking as today — split by `[CHAPTER: Title]` markers, generate audio for each chunk, stitch with ffmpeg. Each chunk passes the same `voice_name` so the podcast has consistent voice throughout. Inline tags within the chunk drive per-utterance expression.
+`splitScriptSegments` (in `audioProducer.ts:29-52`) splits the script on **ad markers** (`[AD:PRE_ROLL]` / `[AD:MID_ROLL]`), not chapter markers — chapter markers are stripped from each text segment before TTS. The new audioProducer keeps that behavior verbatim. One Gemini TTS call per text segment (typically 1-3 calls per podcast: pre-roll-text, mid-roll-text, post-roll-text). Calls run sequentially today; that stays the same in this spec (parallelization is future work, not v14).
 
-**API call shape:**
+**`[CHAPTER:]` strip location:** `splitScriptSegments` strips `[CHAPTER:...]` from each text segment via the existing regex at `audioProducer.ts:44`. The new tagInjector preserves chapter markers in `taggedScript` (Q3 of failure-handling), and the strip still happens inside `splitScriptSegments` as today. No new strip logic.
+
+**API call shape (one per text segment):**
 
 ```typescript
 const response = await client.models.generateContent({
-  model: "gemini-2.5-flash-preview-tts",
-  contents: chunkText,  // contains [tag] markers + script text, NO chapter markers
+  model: GEMINI_TTS_MODEL,
+  contents: segmentText,  // tag-injected script text from segment.content; chapter markers already stripped by splitScriptSegments
   config: {
     responseModalities: ["AUDIO"],
     speechConfig: {
       voiceConfig: {
-        prebuiltVoiceConfig: { voiceName: state.voice },
+        prebuiltVoiceConfig: { voiceName: state.voice ?? DEFAULT_GEMINI_VOICE },
       },
     },
   },
 });
 
-// 24 kHz raw PCM bytes:
-const pcmBytes = response.candidates[0].content.parts[0].inlineData.data;
+// inlineData.data is a BASE64-ENCODED string (per @google/genai SDK), not raw bytes.
+const base64Audio = response.candidates[0].content.parts[0].inlineData.data;
+const pcmBytes = Buffer.from(base64Audio, "base64");
 ```
 
-**Audio format conversion:** Gemini returns 24 kHz raw PCM. Convert to mp3 via ffmpeg before storage:
+**Audio format conversion:** Gemini returns 24 kHz, 16-bit, mono raw PCM as base64. Decode → write tmp `.pcm` file → ffmpeg-encode to mp3 per segment:
 
 ```bash
-ffmpeg -f s16le -ar 24000 -ac 1 -i input.pcm -codec:a libmp3lame -qscale:a 2 output.mp3
+ffmpeg -f s16le -ar 24000 -ac 1 -i segment_N.pcm -codec:a libmp3lame -qscale:a 2 segment_N.mp3
 ```
 
-`ffmpeg` is already a dep for chapter stitching.
+Then ad-stitching is unchanged: ffmpeg `-f concat` over the list of segment mp3s + ad asset mp3s in order, exactly as `stitchAudio` (`audioProducer.ts:54-108`) does today.
 
-**Stitching:** unchanged — concatenate per-chapter mp3s with `ffmpeg -f concat`.
+**Ad assets:** the existing ad-stitching path (reading `ad_assets/pre_roll.mp3` and `ad_assets/mid_roll.mp3` from disk and concatenating between text segments) is preserved verbatim. Only the per-segment TTS provider changes.
 
 ### 3. Voice picker (mobile)
 
@@ -163,7 +184,18 @@ ffmpeg -f s16le -ar 24000 -ac 1 -i input.pcm -codec:a libmp3lame -qscale:a 2 out
 
 **Default voice** if user skips onboarding: `Sulafat`.
 
-**Voice samples:** regenerated via existing `pipeline/scripts/build-voice-samples.ts` flow, swapping OpenAI for Gemini TTS. Output bundled into `mobile/assets/voice-samples/` as 4 mp3s.
+**Voice samples:** regenerated via existing `pipeline/scripts/build-voice-samples.ts` flow, swapping OpenAI for Gemini TTS. Output bundled as 4 mp3s.
+
+**Asset filename casing:** lowercase to match the existing convention in `mobile/src/lib/voiceSamples.ts:19` (the current `coral.mp3`/`ballad.mp3`/etc.). New files: `sulafat.mp3`, `charon.mp3`, `sadaltager.mp3`, `achird.mp3`. The `state.voice` capitalization stays as Gemini expects (`Sulafat`), but bundled asset paths are lowercased — convert at the resolver in `voiceSamples.ts`.
+
+**Sample script copy** (~10 seconds each, embeds the audio-tag system to advertise it):
+
+| Voice | Sample script |
+|---|---|
+| Sulafat | `[chuckles] Hey, I'm Sulafat. I'll narrate your podcast like a friend who happened to know a lot about whatever you're curious about.` |
+| Charon | `I'm Charon. I'll bring substance to the topic — clear, informed, and to the point. [pauses] No fluff.` |
+| Sadaltager | `[thoughtful] I'm Sadaltager. Think of me as the person at dinner who actually knows the history behind whatever you brought up.` |
+| Achird | `I'm Achird. [chuckles] I'll keep it casual and conversational, like we're catching up over coffee.` |
 
 ### 4. Provider — `providers/gemini.ts`
 
@@ -197,6 +229,7 @@ GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts # default; override to gemini-3.1-
 
 **Removed (no longer used):**
 - `TTS_VOICE` constant in `config.ts` (replaced by per-user `state.voice` from picker)
+- `TTS_VOICE_INSTRUCTIONS` constant in `config.ts` (Gemini uses inline `[tag]` markers; whole-text instructions are an OpenAI concept)
 
 **Unchanged:** `OPENAI_API_KEY` stays — `briefBuilder`, `scriptWriter` still use it.
 
@@ -238,30 +271,31 @@ taggedScript: Annotation<string>,
 
 **Migration `00016_gemini_voice_migration.sql`:**
 
+`00012_voice_selection.sql` added `preferred_voice text` with no DEFAULT and no CHECK constraint. So we just need to clear existing values, set a default, add a constraint, and update the comment:
+
 ```sql
 -- 00016_gemini_voice_migration.sql
 -- Switch from OpenAI voices to Gemini voices. Greenfield project (zero users)
 -- so we clear all existing voice preferences and force re-onboarding.
 
-ALTER TABLE public.profiles
-  ALTER COLUMN preferred_voice DROP DEFAULT;
-
 UPDATE public.profiles SET preferred_voice = NULL WHERE preferred_voice IS NOT NULL;
+UPDATE public.podcasts SET voice = NULL WHERE voice IS NOT NULL;
 
 ALTER TABLE public.profiles
   ALTER COLUMN preferred_voice SET DEFAULT 'Sulafat';
-
--- Add a check constraint to prevent invalid voice values from getting in.
-ALTER TABLE public.profiles
-  DROP CONSTRAINT IF EXISTS profiles_preferred_voice_check;
 
 ALTER TABLE public.profiles
   ADD CONSTRAINT profiles_preferred_voice_check
   CHECK (preferred_voice IS NULL OR preferred_voice IN ('Sulafat', 'Charon', 'Sadaltager', 'Achird'));
 
 COMMENT ON COLUMN public.profiles.preferred_voice IS
-  'Gemini TTS voice name. Default: Sulafat. Reset by v14 Gemini TTS migration on 2026-05-07.';
+  'Gemini TTS voice name (Sulafat|Charon|Sadaltager|Achird). Default: Sulafat. Reset by v14 Gemini TTS migration on 2026-05-07.';
+
+COMMENT ON COLUMN public.podcasts.voice IS
+  'Gemini voice this podcast was rendered with. Snapshot from profiles.preferred_voice at submit-podcast time. NULL on legacy rows = pipeline default (Sulafat).';
 ```
+
+We also clear `podcasts.voice` for completeness — old OpenAI voice strings on existing rows would never replay correctly anyway.
 
 ### Status transitions (unchanged)
 
@@ -310,7 +344,7 @@ sequenceDiagram
 |---|---|---|---|
 | Tag injector | Gemini error, malformed output, refuses to tag | try/catch on Gemini call | Fall through with `taggedScript = script`. Log warning. Audio still gets produced, just without tags. |
 | Per-chapter TTS | Gemini error (rate limit, invalid input) | thrown from SDK | Retry once with same input; if still fails, hard-fail the pipeline (matches today's audioProducer semantics). |
-| Voice not in allowlist | `state.voice` not in `GEMINI_VOICES` | validation in `audioProducer` entry | Fall back to `DEFAULT_GEMINI_VOICE`. Log warning. (DB constraint catches most of this; validation is belt + suspenders.) |
+| Voice null OR not in allowlist | `state.voice ∉ GEMINI_VOICES` (covers null and stale OpenAI strings) | validation in `audioProducer` entry | Fall back to `DEFAULT_GEMINI_VOICE`. Log warning. (DB constraint catches most of this; validation is belt + suspenders + handles legacy podcasts submitted before this migration.) |
 | PCM → mp3 conversion | ffmpeg failure | exit code | hard fail — same as today's chunk failures |
 | Empty `taggedScript` | tagInjector returned empty string | length check | Use original `script`. Log warning. |
 
@@ -361,7 +395,7 @@ Worth it for the 30-voice palette + inline tag expressiveness. Still well under 
 | Gemini 2.5 Flash TTS preview is removed/deprecated | env var `GEMINI_TTS_MODEL` allows swap to `gemini-3.1-flash-tts-preview` (or future stable) without code change |
 | Tag injector goes off-script (modifies text, hallucinates content, drops `[CHAPTER:]` markers) | Prompt explicitly says "do NOT modify text"; tagInjector falls through to original script on validation failure |
 | 24 kHz audio quality lower than 16 kHz mp3 from OpenAI | 24 kHz is fine for speech (the human voice fundamentals top out around 8 kHz); listen to first podcast and judge |
-| Gemini latency higher than OpenAI per chunk | Gemini Flash TTS is reasonably fast (~2-5s per chunk); per-chapter parallelism (already exists) keeps total wall-clock comparable |
+| Gemini latency higher than OpenAI per chunk | Gemini Flash TTS is reasonably fast (~2-5s per chunk). Today's `stitchAudio` calls TTS sequentially (audioProducer.ts:64-80); we keep that. With typically 1-3 segments per podcast, sequential is fine. If future profiling shows it as a bottleneck, parallelize via `Promise.all` over `partFiles`. |
 | Voice name typo in DB | DB check constraint enforces allowlist |
 | Inline tags break TTS rendering with weird artifacts | Tag set is curated (Q2 decision); if specific tag misbehaves, remove from `AUDIO_TAGS` env var |
 | Mobile app's bundled voice samples become stale | Regenerate via `build-voice-samples.ts` script as part of cutover; bump app version + force users back through onboarding (clearing preferred_voice) |
@@ -381,10 +415,10 @@ pipeline/src/podcast_pipeline/
 └── ... (audioProducer.ts replaced in place)
 
 supabase/migrations/00016_gemini_voice_migration.sql
-mobile/assets/voice-samples/Sulafat.mp3        # regenerated
-mobile/assets/voice-samples/Charon.mp3
-mobile/assets/voice-samples/Sadaltager.mp3
-mobile/assets/voice-samples/Achird.mp3
+mobile/assets/voice-samples/sulafat.mp3        # regenerated, lowercase to match existing convention
+mobile/assets/voice-samples/charon.mp3
+mobile/assets/voice-samples/sadaltager.mp3
+mobile/assets/voice-samples/achird.mp3
 ```
 
 **Modified:**
@@ -417,7 +451,11 @@ mobile/assets/voice-samples/Achird.mp3
 
 ### Rollback
 
-`git revert <merge-commit>; railway up` — old OpenAI path code is still in git history, no destructive DB changes beyond clearing `preferred_voice` (which were going to be reset anyway in the cutover).
+`git revert <merge-commit>; railway up` — old OpenAI path code is still in git history. The DB migration (00016) sets a default + adds a check constraint; reverting the code does NOT auto-revert the migration. That's fine — the cleared `preferred_voice` rows + Sulafat default + check constraint are the desired state regardless of which TTS path runs (and if we go back to OpenAI we'd write a 00017 to drop the constraint and reset the default). Practical: code revert restores OpenAI flow; DB stays where it is.
+
+### Langfuse traces
+
+Threading is automatic — `tagInjector` and `audioProducer` are LangGraph nodes called via `graph.invoke(state, { callbacks: [...] })`, and the v11 work to thread `RunnableConfig` through nested `.invoke()` calls means Gemini text + Gemini TTS calls inherit the same callback handler as the rest of the pipeline. New nodes inherit the threading; no extra wiring.
 
 ---
 
