@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
 import { RESEARCH_MODELS, RESEARCH_TEMPERATURES } from "../../config.js";
 import { SYNTHESIZER_PROMPT } from "./prompts.js";
@@ -15,6 +16,7 @@ export type ResearchDocument = z.infer<typeof ResearchDocumentSchema>;
 export async function runSynthesizer(
   usable: SubagentFindings[],
   droppedQuestions: string[],
+  config?: RunnableConfig,
 ): Promise<ResearchDocument> {
   const llm = makeOpenRouterModel(RESEARCH_MODELS.reasoning, {
     temperature: RESEARCH_TEMPERATURES.synthesizer,
@@ -26,7 +28,7 @@ export async function runSynthesizer(
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const result = await structured.invoke(prompt);
+      const result = await structured.invoke(prompt, config);
       // Ensure droppedQuestions is set (model may omit if empty)
       return { ...result, droppedQuestions: result.droppedQuestions ?? droppedQuestions };
     } catch (err) {

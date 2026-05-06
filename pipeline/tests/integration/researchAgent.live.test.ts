@@ -37,7 +37,11 @@ describe.skipIf(!RUN_LIVE_RESEARCH)("deepResearchAgent (live, gated)", () => {
         trustedSourceUrls: [],
       } as any;
 
-      const result = await deepResearchAgent(state);
+      const { getLangfuseCallbackHandler } = await import(
+        "../../src/podcast_pipeline/providers/langfuseClient.js"
+      );
+      const callbacks = process.env.LANGFUSE_PUBLIC_KEY ? [getLangfuseCallbackHandler()] : [];
+      const result = await deepResearchAgent(state, { callbacks });
       expect(result.status).toBe("scripting");
       expect(result.researchDocument).toBeDefined();
       const doc = result.researchDocument as any;

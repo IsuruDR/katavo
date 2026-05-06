@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { createDeepAgent } from "deepagents";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
 import { makeTavilyTool } from "../../tools/tavilySearch.js";
@@ -30,7 +31,11 @@ export interface SubagentBudget {
 const timeoutAfter = (ms: number, label: string): Promise<never> =>
   new Promise((_, reject) => setTimeout(() => reject(new Error(label)), ms));
 
-async function invokeOnce(task: SubagentTask, opts: SubagentBudget): Promise<SubagentFindings> {
+async function invokeOnce(
+  task: SubagentTask,
+  opts: SubagentBudget,
+  config?: RunnableConfig,
+): Promise<SubagentFindings> {
   const tool = makeTavilyTool({ taskId: task.id, maxSearches: opts.maxSearches });
   const llm = makeOpenRouterModel(RESEARCH_MODELS.subagent, {
     temperature: RESEARCH_TEMPERATURES.subagent,
@@ -54,9 +59,10 @@ async function invokeOnce(task: SubagentTask, opts: SubagentBudget): Promise<Sub
     responseFormat: SubagentFindingsSchema as any,
   });
 
-  const result = (await agent.invoke({
-    messages: [{ role: "user", content: taskMessage }],
-  })) as { structuredResponse?: SubagentFindings };
+  const result = (await agent.invoke(
+    { messages: [{ role: "user", content: taskMessage }] },
+    config,
+  )) as { structuredResponse?: SubagentFindings };
 
   if (!result.structuredResponse) {
     throw new Error(`Subagent returned no structuredResponse for task ${task.id}`);
@@ -64,11 +70,15 @@ async function invokeOnce(task: SubagentTask, opts: SubagentBudget): Promise<Sub
   return result.structuredResponse;
 }
 
-export async function runSubagent(task: SubagentTask, opts: SubagentBudget): Promise<SubagentFindings> {
+export async function runSubagent(
+  task: SubagentTask,
+  opts: SubagentBudget,
+  config?: RunnableConfig,
+): Promise<SubagentFindings> {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const result = await Promise.race([
-        invokeOnce(task, opts),
+        invokeOnce(task, opts, config),
         timeoutAfter(SUBAGENT_WALLCLOCK_MS, `subagent_wallclock_exceeded_${task.id}`),
       ]);
       if (result.status !== "failed") return result;

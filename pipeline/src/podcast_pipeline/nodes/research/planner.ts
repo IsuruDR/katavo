@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
 import { RESEARCH_MODELS, RESEARCH_TEMPERATURES } from "../../config.js";
 import { PLANNER_PROMPT, PLANNER_RETRY_CONTEXT } from "./prompts.js";
@@ -21,7 +22,11 @@ export interface PlannerInput {
   droppedQuestions?: string[];
 }
 
-export async function runPlanner(researchBrief: string, ctx: PlannerInput): Promise<SubagentTask[]> {
+export async function runPlanner(
+  researchBrief: string,
+  ctx: PlannerInput,
+  config?: RunnableConfig,
+): Promise<SubagentTask[]> {
   const brief = JSON.parse(researchBrief) as { keyQuestions?: string[] };
   const keyQuestions = brief.keyQuestions ?? [];
   if (keyQuestions.length < 3) {
@@ -45,7 +50,7 @@ export async function runPlanner(researchBrief: string, ctx: PlannerInput): Prom
     temperature: RESEARCH_TEMPERATURES.planner,
   });
   const structured = llm.withStructuredOutput(PlannerOutputSchema, { name: "planner_output" });
-  const result = await structured.invoke(prompt);
+  const result = await structured.invoke(prompt, config);
 
   if (result.tasks.length !== keyQuestions.length) {
     throw new Error(`Planner returned ${result.tasks.length} tasks, expected ${keyQuestions.length}`);

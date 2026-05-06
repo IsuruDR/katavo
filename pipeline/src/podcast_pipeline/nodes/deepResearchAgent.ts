@@ -1,3 +1,4 @@
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { runPlanner } from "./research/planner.js";
 import { runSubagent, type SubagentFindings } from "./research/subagent.js";
 import { runSynthesizer, type ResearchDocument } from "./research/synthesizer.js";
@@ -19,18 +20,23 @@ function computeCredibility(doc: ResearchDocument): { score: number; report: str
 
 export async function deepResearchAgent(
   state: PipelineStateType,
+  config?: RunnableConfig,
 ): Promise<Partial<PipelineStateType>> {
   const tier = state.tier ?? "free";
   const budget = RESEARCH_BUDGETS[tier] ?? RESEARCH_BUDGETS.free;
 
   let tasks;
   try {
-    tasks = await runPlanner(state.researchBrief, {
-      researchIterations: state.researchIterations ?? 0,
-      credibilityReport: state.credibilityReport,
-      droppedQuestions:
-        (state.researchDocument as ResearchDocument | undefined)?.droppedQuestions ?? [],
-    });
+    tasks = await runPlanner(
+      state.researchBrief,
+      {
+        researchIterations: state.researchIterations ?? 0,
+        credibilityReport: state.credibilityReport,
+        droppedQuestions:
+          (state.researchDocument as ResearchDocument | undefined)?.droppedQuestions ?? [],
+      },
+      config,
+    );
   } catch (err: any) {
     console.error("[deepResearchAgent.planner] failed:", { error: err?.message ?? String(err) });
     return {
@@ -39,7 +45,7 @@ export async function deepResearchAgent(
     };
   }
 
-  const results = await Promise.all(tasks.map((t) => runSubagent(t, budget)));
+  const results = await Promise.all(tasks.map((t) => runSubagent(t, budget, config)));
   const usable = results.filter((r) => r.status !== "failed");
   const dropped = results.filter((r) => r.status === "failed").map((r) => r.question);
 
@@ -62,7 +68,7 @@ export async function deepResearchAgent(
 
   let researchDocument: ResearchDocument;
   try {
-    researchDocument = await runSynthesizer(usable as SubagentFindings[], dropped);
+    researchDocument = await runSynthesizer(usable as SubagentFindings[], dropped, config);
   } catch (err: any) {
     console.error("[deepResearchAgent.synthesizer] hard failure:", {
       error: err?.message ?? String(err),
