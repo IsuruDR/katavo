@@ -98,16 +98,21 @@ Sources:
 export const AD_PRE_ROLL_MARKER = "[AD:PRE_ROLL]";
 export const AD_MID_ROLL_MARKER = "[AD:MID_ROLL]";
 
-// TTS
-export const TTS_VOICE = "ballad";
-export const TTS_VOICE_INSTRUCTIONS = `Speak like a knowledgeable friend recording a podcast at a coffee table — not a presenter, not a narrator. Tone: warm, slightly amused, low-energy confident.
+// Gemini TTS (v14+) — replaces OpenAI gpt-4o-mini-tts
+export const GEMINI_TTS_MODEL =
+  process.env.GEMINI_TTS_MODEL ?? "gemini-2.5-flash-preview-tts";
+export const GEMINI_TAG_INJECTOR_MODEL =
+  process.env.GEMINI_TAG_INJECTOR_MODEL ?? "gemini-2.5-flash";
 
-Pacing: moderate. Take micro-pauses before complex names, numbers, or dates so they land. Take longer breaths at chapter transitions and after big ideas. Don't rush.
+export const GEMINI_VOICES = ["Sulafat", "Charon", "Sadaltager", "Achird"] as const;
+export type GeminiVoice = typeof GEMINI_VOICES[number];
+export const DEFAULT_GEMINI_VOICE: GeminiVoice = "Sulafat";
 
-Emphasis: lift specific data, names, and dates lightly. Never theatrical — this isn't a movie trailer. Lean into the natural stress of a sentence, not engineered punchlines.
+export const AUDIO_TAGS_DEFAULT = [
+  "laughs", "whispers", "sighs", "chuckles", "curious",
+  "thoughtful", "serious", "surprised", "exhales", "pauses",
+] as const;
 
-Em-dash asides — like this — should drop slightly in pitch and pick up in pace, then return to the main line. They're throwaway thoughts, not announcements.
-
-Disfluencies like "you know," "kinda," "I mean," "huh," "anyway" should sound thrown away — quick and unstressed, not deliberate. Don't perform them.
-
-Avoid: announcer cadence, evenly-spaced sentence rhythm, theatrical sweeps, building to false drama, signpost intonation on chapter titles, "podcast voice."`;
+const _audioTagsEnv = process.env.AUDIO_TAGS?.split(",").map((s) => s.trim()).filter(Boolean);
+export const AUDIO_TAGS: readonly string[] =
+  _audioTagsEnv && _audioTagsEnv.length > 0 ? _audioTagsEnv : [...AUDIO_TAGS_DEFAULT];
