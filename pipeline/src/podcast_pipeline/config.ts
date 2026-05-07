@@ -32,7 +32,7 @@ export const MAX_RESEARCH_RETRIES = 2;
 
 
 // Script targets
-export const TARGET_WORD_COUNT = 2200; // bumped from 1500 — model reliably undershoots; aim high to land ~1500
+export const TARGET_WORD_COUNT = 6600; // tripled from 2200 — long-form ~40min episodes
 export const TARGET_CHAPTER_COUNT = 4; // Intro + 2-3 sections + conclusion
 
 // Prompts
@@ -50,7 +50,7 @@ export const SCRIPT_WRITER_PROMPT = `You are writing a single-narrator podcast i
 
 This script will be rendered as expressive audio by a TTS model with a chosen voice (warm, conversational, low-energy confident). Write for the ear, not the eye. Every sentence should sound right read aloud — not just parse correctly on the page. A second pass will lightly insert audio cues like [chuckles] / [pauses] for delivery; your job is to write prose with the rhythm those cues will sit on top of.
 
-Length: aim for {targetWords} words (~12-14 minutes at 150 wpm). Hard floor: 1800 words. Going long is fine; going short is not. Better to be 12 minutes of dense narrative than 7 minutes that feels rushed.
+Length: aim for {targetWords} words (~36-44 minutes at 150 wpm). Hard floor: 5400 words. Going long is fine; going short is not. Better to be 40 minutes of dense narrative than 25 minutes that feels rushed.
 
 Voice rules:
 - Open IN the topic. First sentence should land on a specific stat, moment, or person — never preamble. Examples that work: "Bezzera's first patent was filed on a Tuesday." / "There's a number that explains all of this: three." Examples that don't: "Today we'll explore...", "Imagine a world..."
@@ -66,7 +66,7 @@ Voice rules:
 - Use contractions naturally (it's, won't, that's). Written-formal contractions ("it is", "do not") sound stilted on audio.
 
 Self-check before finalizing:
-- Count the words in the script body (excluding [CHAPTER:] markers and the JSON map). If under 1800 words, expand. The most common gap is thin middle chapters — each non-opening chapter should have at least 350 words.
+- Count the words in the script body (excluding [CHAPTER:] markers and the JSON map). If under 5400 words, expand. The most common gap is thin middle chapters — each non-opening chapter should have at least 1050 words.
 - Read each chapter's opening sentence aloud in your head. Does it grab a listener mid-thought? If not, find a sharper entry point.
 - Read your last sentence aloud. If it doesn't feel like an ending, it isn't. Rewrite.
 - Add concrete examples, named people, dates, quoted source material. Do not pad with filler or repeat yourself.
