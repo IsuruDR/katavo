@@ -5,35 +5,35 @@
  */
 
 export interface VoiceMeta {
-  id: string;
-  name: string;
+  id: string;        // Gemini voice name, capitalized (matches state.voice + DB)
+  name: string;      // Display name in UI
   descriptor: string;
-  sample: number; // require() module ID
+  sample: number;    // require() module ID
 }
 
 export const VOICES: readonly VoiceMeta[] = [
   {
-    id: "coral",
-    name: "Coral",
-    descriptor: "Warm, natural, easy to listen to.",
-    sample: require("../../assets/voice-samples/coral.mp3"),
+    id: "Sulafat",
+    name: "Sulafat",
+    descriptor: "Warm, conversational. Like a friend who knows their stuff.",
+    sample: require("../../assets/voice-samples/sulafat.mp3"),
   },
   {
-    id: "sage",
-    name: "Sage",
-    descriptor: "Thoughtful, contemplative.",
-    sample: require("../../assets/voice-samples/sage.mp3"),
+    id: "Charon",
+    name: "Charon",
+    descriptor: "Substance-forward, clear, informed. No fluff.",
+    sample: require("../../assets/voice-samples/charon.mp3"),
   },
   {
-    id: "ash",
-    name: "Ash",
-    descriptor: "Calm, steady, low-key.",
-    sample: require("../../assets/voice-samples/ash.mp3"),
+    id: "Sadaltager",
+    name: "Sadaltager",
+    descriptor: "Thoughtful, knowledgeable. The dinner-party historian.",
+    sample: require("../../assets/voice-samples/sadaltager.mp3"),
   },
   {
-    id: "ballad",
-    name: "Ballad",
-    descriptor: "Expressive, a little theatrical.",
-    sample: require("../../assets/voice-samples/ballad.mp3"),
+    id: "Achird",
+    name: "Achird",
+    descriptor: "Casual, friendly. Coffee-shop conversation tempo.",
+    sample: require("../../assets/voice-samples/achird.mp3"),
   },
 ];
