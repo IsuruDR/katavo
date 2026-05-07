@@ -121,17 +121,27 @@ In the same file, delete:
 - `TTS_VOICE` constant
 - `TTS_VOICE_INSTRUCTIONS` constant
 
-- [ ] **Step 3: Verify nothing imports the removed symbols (other than what we're about to delete)**
+- [ ] **Step 3: Verify nothing imports the removed symbols (other than what we're about to delete/rewrite)**
 
 ```bash
 cd pipeline && grep -rn "TTS_VOICE\|TTS_VOICE_INSTRUCTIONS" src/ tests/ scripts/ 2>/dev/null
 ```
 
-Expected: only references in `nodes/audioProducer.ts`, `providers/ttsOpenai.ts`, `scripts/build-voice-samples.ts` — those files are getting rewritten in later tasks. Note them but don't fix yet.
+Expected references — all of these get fixed/deleted in later tasks:
+- `nodes/audioProducer.ts` (Task 8 rewrites)
+- `providers/ttsOpenai.ts` (Task 10 deletes)
+- `scripts/build-voice-samples.ts` (Task 12 rewrites)
+- `scripts/test-voices.ts` (Task 10 deletes — one-off A/B utility, no longer relevant)
 
-- [ ] **Step 4: Skip tsc check until Task 11**
+- [ ] **Step 4: Skip full tsc check until Task 10**
 
-Removing `TTS_VOICE_INSTRUCTIONS` will break `build-voice-samples.ts` and `ttsOpenai.ts` until those are rewritten/deleted in later tasks. Don't run tsc here.
+Until `ttsOpenai.ts`, `test-voices.ts` and `build-voice-samples.ts` are addressed, tsc will report errors in those files. To verify your changes compile cleanly in scope, scope tsc to the files we've touched:
+
+```bash
+cd pipeline && npx tsc --noEmit src/podcast_pipeline/config.ts
+```
+
+Expected: clean. Full-suite tsc check waits until Task 10.
 
 - [ ] **Step 5: Commit**
 
@@ -256,9 +266,112 @@ git commit -m "feat: add Gemini client singleton factory"
 
 ---
 
+### Task 4b: Empty-AUDIO_TAGS guard test
+
+**Files:**
+- Create: `pipeline/tests/audioTags.test.ts`
+
+The spec requires `AUDIO_TAGS` to fall back to defaults if the env var is set but empty/comma-only. This test guards against a future regression where someone removes the `length > 0` check.
+
+- [ ] **Step 1: Write test**
+
+```typescript
+import { describe, it, expect, beforeEach } from "vitest";
+
+describe("AUDIO_TAGS env-var guard", () => {
+  beforeEach(() => {
+    // Clear module cache so config.ts re-evaluates env on each import
+    vi.resetModules();
+  });
+
+  it("falls back to defaults when env var is unset", async () => {
+    delete process.env.AUDIO_TAGS;
+    const { AUDIO_TAGS, AUDIO_TAGS_DEFAULT } = await import(
+      "../src/podcast_pipeline/config.js"
+    );
+    expect(AUDIO_TAGS).toEqual([...AUDIO_TAGS_DEFAULT]);
+  });
+
+  it("falls back to defaults when env var is empty string", async () => {
+    process.env.AUDIO_TAGS = "";
+    const { AUDIO_TAGS, AUDIO_TAGS_DEFAULT } = await import(
+      "../src/podcast_pipeline/config.js"
+    );
+    expect(AUDIO_TAGS).toEqual([...AUDIO_TAGS_DEFAULT]);
+  });
+
+  it("falls back to defaults when env var is just commas", async () => {
+    process.env.AUDIO_TAGS = ",,,";
+    const { AUDIO_TAGS, AUDIO_TAGS_DEFAULT } = await import(
+      "../src/podcast_pipeline/config.js"
+    );
+    expect(AUDIO_TAGS).toEqual([...AUDIO_TAGS_DEFAULT]);
+  });
+
+  it("uses env var when populated", async () => {
+    process.env.AUDIO_TAGS = "laughs,whispers";
+    const { AUDIO_TAGS } = await import("../src/podcast_pipeline/config.js");
+    expect(AUDIO_TAGS).toEqual(["laughs", "whispers"]);
+  });
+});
+```
+
+Add `import { vi } from "vitest";` at the top.
+
+- [ ] **Step 2: Run test (should fail because Task 3 didn't have the guard yet — wait, it does, so should pass)**
+
+```bash
+cd pipeline && npx vitest run tests/audioTags.test.ts
+```
+
+Expected: 4 passed (Task 3 already added the guard).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add pipeline/tests/audioTags.test.ts
+git commit -m "test: AUDIO_TAGS env-var guard (defaults on empty/missing)"
+```
+
+---
+
 ## Chunk 2: tagInjector node
 
-### Task 5: tagInjector node (TDD)
+### Task 5: Add `taggedScript` field to PipelineState
+
+**Files:**
+- Modify: `pipeline/src/podcast_pipeline/state.ts`
+
+We add the state field FIRST so Task 6's tagInjector implementation compiles cleanly when it references `taggedScript` in its `Partial<PipelineStateType>` return.
+
+- [ ] **Step 1: Add field to annotation map**
+
+In `state.ts` after `script: Annotation<string>,` insert:
+
+```typescript
+  taggedScript: Annotation<string>,
+```
+
+In `makeInitialState` defaults add `taggedScript: ""`.
+
+- [ ] **Step 2: Verify state.test.ts still passes**
+
+```bash
+cd pipeline && npx vitest run tests/state.test.ts
+```
+
+If the test enumerates fields, it may need updating to expect `taggedScript`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add pipeline/src/podcast_pipeline/state.ts pipeline/tests/state.test.ts
+git commit -m "state: add taggedScript field for v14 tagInjector"
+```
+
+---
+
+### Task 6: tagInjector node (TDD)
 
 **Files:**
 - Create: `pipeline/src/podcast_pipeline/nodes/tagInjector.ts`
@@ -309,21 +422,28 @@ describe("tagInjector", () => {
     expect((result.taggedScript!.match(/\[CHAPTER:/g) ?? []).length).toBe(2);
   });
 
-  it("falls through to original script on Gemini error", async () => {
+  it("falls through to original script on Gemini error AND logs warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockGenerateContent.mockRejectedValueOnce(new Error("API failure"));
     const { tagInjector } = await import("../src/podcast_pipeline/nodes/tagInjector.js");
     const result = await tagInjector({ script: SCRIPT_WITH_2_CHAPTERS } as any);
     expect(result.taggedScript).toBe(SCRIPT_WITH_2_CHAPTERS);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/SDK error/), expect.anything());
+    warnSpy.mockRestore();
   });
 
-  it("falls through when output is empty", async () => {
+  it("falls through when output is empty AND logs warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockGenerateContent.mockResolvedValueOnce({ text: "   " });
     const { tagInjector } = await import("../src/podcast_pipeline/nodes/tagInjector.js");
     const result = await tagInjector({ script: SCRIPT_WITH_2_CHAPTERS } as any);
     expect(result.taggedScript).toBe(SCRIPT_WITH_2_CHAPTERS);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/empty model output/));
+    warnSpy.mockRestore();
   });
 
-  it("falls through when chapter-marker count differs", async () => {
+  it("falls through when chapter-marker count differs AND logs warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockGenerateContent.mockResolvedValueOnce({
       text: `[CHAPTER: Origins]
 [curious] Bezzera filed his patent in 1901.`,  // dropped second chapter
@@ -331,6 +451,8 @@ describe("tagInjector", () => {
     const { tagInjector } = await import("../src/podcast_pipeline/nodes/tagInjector.js");
     const result = await tagInjector({ script: SCRIPT_WITH_2_CHAPTERS } as any);
     expect(result.taggedScript).toBe(SCRIPT_WITH_2_CHAPTERS);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/chapter-marker count mismatch/));
+    warnSpy.mockRestore();
   });
 
   it("includes AUDIO_TAGS values in the prompt", async () => {
@@ -440,38 +562,6 @@ Expected: 5 passed.
 ```bash
 git add pipeline/src/podcast_pipeline/nodes/tagInjector.ts pipeline/tests/tagInjector.test.ts
 git commit -m "feat: add tagInjector node with graceful fallthrough"
-```
-
----
-
-### Task 6: Add `taggedScript` field to PipelineState
-
-**Files:**
-- Modify: `pipeline/src/podcast_pipeline/state.ts`
-
-- [ ] **Step 1: Add field to annotation map**
-
-In `state.ts` after `script: Annotation<string>,` insert:
-
-```typescript
-  taggedScript: Annotation<string>,
-```
-
-And in `makeInitialState` defaults add `taggedScript: ""`.
-
-- [ ] **Step 2: tsc check**
-
-```bash
-cd pipeline && npx tsc --noEmit 2>&1 | tail -5
-```
-
-Expected: clean. (The `_config` param in tagInjector is `_`-prefixed and `eslint-disable`d so unused-warning is OK.)
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add pipeline/src/podcast_pipeline/state.ts
-git commit -m "state: add taggedScript field for v14 tagInjector"
 ```
 
 ---
@@ -811,39 +901,39 @@ git commit -m "feat: wire tagInjector node between scriptWriter/adInjector and a
 
 ---
 
-### Task 10: Delete OpenAI TTS provider files + update tests
+### Task 10: Delete OpenAI TTS provider files + obsolete test-voices script
 
 **Files:**
 - Delete: `pipeline/src/podcast_pipeline/providers/ttsOpenai.ts`
 - Delete: `pipeline/tests/ttsOpenai.test.ts`
+- Delete: `pipeline/scripts/test-voices.ts` (one-off OpenAI A/B utility, no longer relevant — spec opted out of A/B testing)
 
 - [ ] **Step 1: Delete files**
 
 ```bash
-rm pipeline/src/podcast_pipeline/providers/ttsOpenai.ts pipeline/tests/ttsOpenai.test.ts
+git rm pipeline/src/podcast_pipeline/providers/ttsOpenai.ts pipeline/tests/ttsOpenai.test.ts pipeline/scripts/test-voices.ts
 ```
 
 - [ ] **Step 2: Verify no remaining imports**
 
 ```bash
-cd pipeline && grep -rn "ttsOpenai\|OpenAITTS" src/ tests/ scripts/ 2>/dev/null
+cd pipeline && grep -rn "ttsOpenai\|OpenAITTS\|TTS_VOICE_INSTRUCTIONS" src/ tests/ scripts/ 2>/dev/null
 ```
 
-Expected: empty.
+Expected: only `scripts/build-voice-samples.ts` references `TTS_VOICE_INSTRUCTIONS` (gets rewritten in Task 12).
 
-- [ ] **Step 3: Run full suite + tsc**
+- [ ] **Step 3: Skip-scope tsc + run unit tests**
 
 ```bash
-cd pipeline && npx tsc --noEmit && npx vitest run --exclude tests/integration/**
+cd pipeline && npx vitest run --exclude tests/integration/**
 ```
 
-Expected: clean compile + all tests green. **Note:** `scripts/build-voice-samples.ts` will still fail to compile because it imports `TTS_VOICE_INSTRUCTIONS` (removed in Task 3). That's intentional — it gets rewritten in Task 12.
+Expected: tests green. Full tsc still pending (`build-voice-samples.ts` rewrite in Task 12 is the last remaining broken file).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add -A pipeline/src/podcast_pipeline/providers/ttsOpenai.ts pipeline/tests/ttsOpenai.test.ts
-git commit -m "chore: remove OpenAI TTS provider (replaced by GeminiTTS)"
+git commit -m "chore: remove OpenAI TTS provider + test-voices script (replaced by Gemini)"
 ```
 
 ---
@@ -974,15 +1064,23 @@ main().catch((err) => {
 });
 ```
 
-- [ ] **Step 2: tsc check**
+- [ ] **Step 2: Full tsc check (all broken files now fixed)**
 
 ```bash
 cd pipeline && npx tsc --noEmit
 ```
 
-Expected: clean.
+Expected: clean. This is the first time the full suite compiles cleanly since Task 3.
 
-- [ ] **Step 3: Commit (don't run yet — needs API key)**
+- [ ] **Step 3: Full test suite**
+
+```bash
+cd pipeline && npx vitest run --exclude tests/integration/**
+```
+
+Expected: all tests green.
+
+- [ ] **Step 4: Commit (don't run script yet — needs API key)**
 
 ```bash
 git add pipeline/scripts/build-voice-samples.ts
@@ -1012,13 +1110,13 @@ Expected: 4 mp3s written. Listen to each briefly to confirm they sound right.
 - [ ] **Step 3: Delete old OpenAI samples**
 
 ```bash
-rm mobile/assets/voice-samples/coral.mp3 mobile/assets/voice-samples/sage.mp3 mobile/assets/voice-samples/ash.mp3 mobile/assets/voice-samples/ballad.mp3
+git rm mobile/assets/voice-samples/coral.mp3 mobile/assets/voice-samples/sage.mp3 mobile/assets/voice-samples/ash.mp3 mobile/assets/voice-samples/ballad.mp3
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add mobile/assets/voice-samples/
+git add mobile/assets/voice-samples/sulafat.mp3 mobile/assets/voice-samples/charon.mp3 mobile/assets/voice-samples/sadaltager.mp3 mobile/assets/voice-samples/achird.mp3
 git commit -m "assets: regenerate voice samples for Gemini voices (Sulafat/Charon/Sadaltager/Achird)"
 ```
 
@@ -1220,7 +1318,7 @@ Open the mobile app, complete onboarding (pick any of the 4 Gemini voices), subm
 - [ ] **Step 2: Watch Railway logs**
 
 Via Railway MCP `get-logs` or dashboard. Look for:
-- `briefBuilder → deepResearchAgent → qualityGate → scripting → tagInjector → audioProducer → metadataWriter`
+- Node sequence: `briefBuilder → deepResearchAgent → qualityGate → scriptWriter → (adInjector?) → tagInjector → audioProducer → metadataWriter`
 - No `[tagInjector] fallthrough` warnings (or if they appear, the podcast still completes — fallthrough is graceful)
 
 - [ ] **Step 3: Listen to the podcast**
