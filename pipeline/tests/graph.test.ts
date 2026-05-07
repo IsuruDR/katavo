@@ -85,12 +85,12 @@ describe("routeAfterScript", () => {
     expect(result).toBe("adInjector");
   });
 
-  it("routes directly to audioProducer when no ads", () => {
+  it("routes directly to tagInjector when no ads", () => {
     const result = routeAfterScript({
       status: "scripting",
       hasAds: false,
     } as any);
-    expect(result).toBe("audioProducer");
+    expect(result).toBe("tagInjector");
   });
 });
 

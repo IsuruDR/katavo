@@ -13,6 +13,7 @@ import { deepResearchAgent } from "./nodes/deepResearchAgent.js";
 import { qualityGate } from "./nodes/qualityGate.js";
 import { scriptWriter } from "./nodes/scriptWriter.js";
 import { adInjector } from "./nodes/adInjector.js";
+import { tagInjector } from "./nodes/tagInjector.js";
 import { audioProducer } from "./nodes/audioProducer.js";
 import { metadataWriter } from "./nodes/metadataWriter.js";
 import { handlePipelineFailure } from "./nodes/errorHandler.js";
@@ -50,7 +51,7 @@ export function routeAfterScript(state: PipelineStateType): string {
   if (state.hasAds) {
     return "adInjector";
   }
-  return "audioProducer";
+  return "tagInjector";
 }
 
 const workflow = new StateGraph(PipelineState)
@@ -59,6 +60,7 @@ const workflow = new StateGraph(PipelineState)
   .addNode("qualityGate", qualityGate)
   .addNode("scriptWriter", scriptWriter)
   .addNode("adInjector", adInjector)
+  .addNode("tagInjector", tagInjector)
   .addNode("audioProducer", audioProducer)
   .addNode("metadataWriter", metadataWriter)
   .addEdge("__start__", "briefBuilder")
@@ -66,7 +68,8 @@ const workflow = new StateGraph(PipelineState)
   .addConditionalEdges("deepResearchAgent", routeAfterDeepResearch)
   .addConditionalEdges("qualityGate", routeAfterQualityGate)
   .addConditionalEdges("scriptWriter", routeAfterScript)
-  .addEdge("adInjector", "audioProducer")
+  .addEdge("adInjector", "tagInjector")
+  .addEdge("tagInjector", "audioProducer")
   .addEdge("audioProducer", "metadataWriter")
   .addEdge("metadataWriter", END);
 
