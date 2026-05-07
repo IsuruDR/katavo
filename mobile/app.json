@@ -18,7 +18,14 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs microphone access for Deep Dive voice conversations with the AI researcher.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.170370754965-0937qerdo5vb4365sh2pgk2kffe9a2mj"
+            ]
+          }
+        ]
       },
       "bitcode": false
     },
