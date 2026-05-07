@@ -35,6 +35,7 @@ export const PipelineState = Annotation.Root({
 
   // Script phase
   script: Annotation<string>,
+  taggedScript: Annotation<string>,
   chapterResearchMap: Annotation<ChapterResearchMap>,
   adMarkers: Annotation<Record<string, number> | null>, // {preRoll: seconds, midRoll: seconds}
 
@@ -74,6 +75,7 @@ export function makeInitialState(overrides: Partial<PipelineStateType>): Pipelin
     researchIterations: 0,
     voice: null,
     script: "",
+    taggedScript: "",
     chapterResearchMap: null,
     adMarkers: null,
     audioUrl: "",
