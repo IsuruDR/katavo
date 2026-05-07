@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AD_PRE_ROLL_MARKER, AD_MID_ROLL_MARKER } from "../config.js";
 import type { TTSProvider } from "../providers/ttsBase.js";
-import { OpenAITTS } from "../providers/ttsOpenai.js";
+import { GeminiTTS } from "../providers/ttsGemini.js";
 import { getSupabaseClient } from "../providers/supabaseClient.js";
 import { persistStatus } from "./persistStatus.js";
 import type { PipelineStateType } from "../state.js";
@@ -23,7 +23,7 @@ interface ScriptSegment {
 }
 
 function getTtsProvider(): TTSProvider {
-  return new OpenAITTS();
+  return new GeminiTTS();
 }
 
 export function splitScriptSegments(script: string): ScriptSegment[] {
@@ -110,12 +110,13 @@ export async function stitchAudio(
 export async function audioProducer(
   state: PipelineStateType,
 ): Promise<Partial<PipelineStateType>> {
-  const { script, podcastId, userId } = state;
+  const { taggedScript, script, podcastId, userId } = state;
+  const sourceScript = taggedScript || script; // fallthrough if tagInjector failed silently
 
   await persistStatus(podcastId, "generating_audio");
 
   const tts = getTtsProvider();
-  const segments = splitScriptSegments(script);
+  const segments = splitScriptSegments(sourceScript);
   const { audioBytes, durationSeconds } = await stitchAudio(segments, tts, state.voice);
 
   const supabase = getSupabaseClient();
