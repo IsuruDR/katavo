@@ -34,7 +34,6 @@ describe.skipIf(!RUN_LIVE_RESEARCH)("deepResearchAgent (live, gated)", () => {
         tier: "pro",
         researchIterations: 0,
         hasAds: false,
-        trustedSourceUrls: [],
       } as any;
 
       const { getLangfuseCallbackHandler } = await import(

@@ -10,7 +10,6 @@ describe("PipelineState", () => {
       topic: "quantum computing",
       clarifyingAnswers: [{ q: "What angle?", a: "beginner friendly" }],
       hasAds: true,
-      trustedSourceUrls: [],
       tier: "free",
     });
 

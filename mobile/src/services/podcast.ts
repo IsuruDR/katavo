@@ -34,7 +34,6 @@ export async function generateQuestions(topic: string): Promise<string[]> {
 export async function submitPodcast(
   topic: string,
   clarifyingAnswers: Array<{ q: string; a: string }>,
-  trustedSourceId?: string,
 ): Promise<{ podcastId: string }> {
   const {
     data: { session },
@@ -46,7 +45,7 @@ export async function submitPodcast(
       "Content-Type": "application/json",
       Authorization: `Bearer ${session?.access_token}`,
     },
-    body: JSON.stringify({ topic, clarifyingAnswers, trustedSourceId }),
+    body: JSON.stringify({ topic, clarifyingAnswers }),
   });
 
   if (!response.ok) {

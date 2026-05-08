@@ -96,7 +96,7 @@ describe.skipIf(!envReady)("API integration (live deploy)", () => {
   afterAll(async () => {
     if (admin && userId) {
       // Cascading FKs on auth.users wipe profile, subscription, credit transactions,
-      // podcasts, research_contexts, qa_sessions, trusted_sources.
+      // podcasts, research_contexts, qa_sessions.
       await admin.auth.admin.deleteUser(userId);
     }
   });

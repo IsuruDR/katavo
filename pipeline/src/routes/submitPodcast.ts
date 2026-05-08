@@ -8,7 +8,7 @@
  * Instead calls jobManager.enqueue() for in-process pipeline execution.
  *
  * Auth: userAuth middleware (JWT)
- * Request body: { topic, clarifyingAnswers?, trustedSourceId? }
+ * Request body: { topic, clarifyingAnswers? }
  * Response: { podcast_id, status: "queued" }
  */
 
@@ -34,7 +34,6 @@ route.post("/", userAuth, async (c) => {
     const body = await c.req.json();
     const topic = body.topic;
     const clarifyingAnswers = body.clarifyingAnswers ?? body.clarifying_answers ?? [];
-    const trustedSourceId = body.trustedSourceId ?? body.trusted_source_id;
 
     const serviceClient = createClient(
       process.env.SUPABASE_URL!,
@@ -139,20 +138,6 @@ route.post("/", userAuth, async (c) => {
       podcast_id: podcast.id,
     });
 
-    // Resolve trusted source URLs
-    let trustedSourceUrls: string[] = [];
-    if (trustedSourceId && subscription.tier === "pro") {
-      const { data: sources } = await serviceClient
-        .from("trusted_sources")
-        .select("urls")
-        .eq("id", trustedSourceId)
-        .eq("user_id", user.id)
-        .single();
-      if (sources) {
-        trustedSourceUrls = sources.urls.map((s: { url: string }) => s.url);
-      }
-    }
-
     // Enqueue pipeline run (replaces LangGraph HTTP dispatch)
     try {
       jobManager.enqueue(podcast.id, {
@@ -161,7 +146,6 @@ route.post("/", userAuth, async (c) => {
         topic,
         clarifyingAnswers: clarifyingAnswers || [],
         hasAds,
-        trustedSourceUrls,
         tier: subscription.tier,
         voice,
       });

@@ -20,7 +20,6 @@ export const PipelineState = Annotation.Root({
   topic: Annotation<string>,
   clarifyingAnswers: Annotation<Record<string, unknown>[]>,
   hasAds: Annotation<boolean>,
-  trustedSourceUrls: Annotation<string[]>,
   tier: Annotation<string>, // "free", "plus", "pro"
 
   // Research phase
@@ -64,7 +63,6 @@ export function makeInitialState(overrides: Partial<PipelineStateType>): Pipelin
     topic: "",
     clarifyingAnswers: [],
     hasAds: false,
-    trustedSourceUrls: [],
     tier: "free",
     researchBrief: "",
     researchDocument: {},

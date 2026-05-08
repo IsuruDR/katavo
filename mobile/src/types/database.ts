@@ -285,33 +285,6 @@ export type Database = {
         }
         Relationships: []
       }
-      trusted_sources: {
-        Row: {
-          created_at: string
-          id: string
-          name: string
-          updated_at: string
-          urls: Json
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          name: string
-          updated_at?: string
-          urls?: Json
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          name?: string
-          updated_at?: string
-          urls?: Json
-          user_id?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
