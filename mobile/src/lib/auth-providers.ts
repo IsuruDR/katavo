@@ -66,6 +66,11 @@ export async function signInWithGoogle(): Promise<{ displayName?: string }> {
   if (!idToken) {
     throw new Error("Google sign-in returned no ID token");
   }
+  // No nonce param: @react-native-google-signin v16 OSS doesn't expose
+  // the auto-generated nonce, and the API doesn't accept a custom one
+  // (only the paid OneTap variant does). Supabase's Google provider must
+  // have "Skip nonce checks" enabled — Google still validates the nonce
+  // on its side, so replay-attack defense remains at the Google layer.
   const { error } = await supabase.auth.signInWithIdToken({
     provider: "google",
     token: idToken,
