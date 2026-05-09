@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "./useAuth";
 
@@ -61,6 +61,9 @@ export function usePodcasts() {
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Optimistically deleted rows kept around for the undo window so restore()
+  // can re-insert without a network round-trip.
+  const pendingDeletes = useRef(new Map<string, Podcast>()).current;
 
   const fetchPodcasts = useCallback(async () => {
     if (!user) {
@@ -131,5 +134,44 @@ export function usePodcasts() {
     fetchPodcasts();
   }, [fetchPodcasts]);
 
-  return { podcasts, loading, refreshing, refresh };
+  // Optimistic soft-delete: stash the row + drop it locally so it vanishes
+  // immediately, then write deleted_at on the server. restore() reverses
+  // the column write and re-inserts the stashed row at its original
+  // position (sorted by created_at desc).
+  const softDelete = useCallback(
+    async (id: string) => {
+      setPodcasts((prev) => {
+        const target = prev.find((p) => p.id === id);
+        if (target) pendingDeletes.set(id, target);
+        return prev.filter((p) => p.id !== id);
+      });
+      await supabase
+        .from("podcasts")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", id);
+    },
+    [pendingDeletes],
+  );
+
+  const restore = useCallback(
+    async (id: string) => {
+      const stashed = pendingDeletes.get(id);
+      pendingDeletes.delete(id);
+      if (stashed) {
+        setPodcasts((prev) => {
+          if (prev.some((p) => p.id === id)) return prev;
+          const next = [...prev, stashed];
+          next.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          return next;
+        });
+      }
+      await supabase
+        .from("podcasts")
+        .update({ deleted_at: null })
+        .eq("id", id);
+    },
+    [pendingDeletes],
+  );
+
+  return { podcasts, loading, refreshing, refresh, softDelete, restore };
 }

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -8,11 +8,38 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { usePodcasts } from "../../src/hooks/usePodcasts";
+import type { Podcast } from "../../src/hooks/usePodcasts";
+import {
+  useUndoableDelete,
+  UNDO_WINDOW_MS,
+} from "../../src/hooks/useUndoableDelete";
 import { PodcastRow } from "../../src/components/PodcastRow";
+import { SearchField } from "../../src/components/SearchField";
+import { UndoBanner } from "../../src/components/UndoBanner";
+import { PodcastActionSheet } from "../../src/components/PodcastActionSheet";
 import { color, space, text } from "../../src/theme/tokens";
 
+const SEARCH_THRESHOLD = 8;
+
 export default function Library() {
-  const { podcasts, loading, refreshing, refresh } = usePodcasts();
+  const { podcasts, loading, refreshing, refresh, softDelete, restore } =
+    usePodcasts();
+
+  const [query, setQuery] = useState("");
+  const [actionTarget, setActionTarget] = useState<Podcast | null>(null);
+
+  const { pending, requestDelete, undo } = useUndoableDelete({
+    softDelete,
+    restore,
+  });
+
+  const showSearch = podcasts.length >= SEARCH_THRESHOLD;
+
+  const filtered = useMemo(() => {
+    if (!showSearch || query.trim().length === 0) return podcasts;
+    const needle = query.trim().toLowerCase();
+    return podcasts.filter((p) => p.topic.toLowerCase().includes(needle));
+  }, [podcasts, query, showSearch]);
 
   const refreshControl = useMemo(
     () => (
@@ -27,31 +54,84 @@ export default function Library() {
     [refreshing, refresh],
   );
 
+  const handleRequestDelete = (podcast: Podcast) => {
+    requestDelete({ id: podcast.id, topic: podcast.topic });
+  };
+
+  const handleSheetDelete = () => {
+    if (!actionTarget) return;
+    const target = actionTarget;
+    setActionTarget(null);
+    handleRequestDelete(target);
+  };
+
+  const isSearching = showSearch && query.trim().length > 0;
+  const noMatches = isSearching && filtered.length === 0;
+
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
       {loading ? (
         <SkeletonList />
       ) : (
         <FlatList
-          data={podcasts}
+          style={styles.list}
+          data={filtered}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <PodcastRow podcast={item} />}
+          renderItem={({ item }) => (
+            <PodcastRow
+              podcast={item}
+              onRequestDelete={handleRequestDelete}
+              onLongPress={(p) => setActionTarget(p)}
+            />
+          )}
           ItemSeparatorComponent={Divider}
-          ListHeaderComponent={<LibraryHeader count={podcasts.length} />}
+          ListHeaderComponent={
+            <LibraryHeader
+              count={podcasts.length}
+              showSearch={showSearch}
+              query={query}
+              onChangeQuery={setQuery}
+            />
+          }
           contentContainerStyle={
-            podcasts.length === 0 ? styles.emptyContent : styles.listContent
+            filtered.length === 0 && !noMatches
+              ? styles.emptyContent
+              : styles.listContent
           }
           refreshControl={refreshControl}
-          ListEmptyComponent={EmptyState}
+          ListEmptyComponent={noMatches ? <NoMatches query={query} /> : EmptyState}
           alwaysBounceVertical
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         />
       )}
+
+      {pending && (
+        <UndoBanner
+          topic={pending.topic}
+          onUndo={undo}
+          durationMs={UNDO_WINDOW_MS}
+        />
+      )}
+
+      <PodcastActionSheet
+        visible={actionTarget !== null}
+        topic={actionTarget?.topic ?? ""}
+        onDelete={handleSheetDelete}
+        onDismiss={() => setActionTarget(null)}
+      />
     </SafeAreaView>
   );
 }
 
-function LibraryHeader({ count }: { count: number }) {
+interface HeaderProps {
+  count: number;
+  showSearch: boolean;
+  query: string;
+  onChangeQuery: (v: string) => void;
+}
+
+function LibraryHeader({ count, showSearch, query, onChangeQuery }: HeaderProps) {
   return (
     <View style={styles.header}>
       <Text style={styles.title}>Library</Text>
@@ -59,6 +139,11 @@ function LibraryHeader({ count }: { count: number }) {
         <Text style={styles.subtitle}>
           {count} {count === 1 ? "podcast" : "podcasts"}
         </Text>
+      )}
+      {showSearch && (
+        <View style={styles.searchSlot}>
+          <SearchField value={query} onChangeText={onChangeQuery} />
+        </View>
       )}
     </View>
   );
@@ -73,6 +158,17 @@ function EmptyState() {
         <Text style={styles.emptyHintAccent}>Generate</Text>
         {" "}to start your first podcast.
       </Text>
+    </View>
+  );
+}
+
+function NoMatches({ query }: { query: string }) {
+  return (
+    <View style={styles.noMatches}>
+      <Text style={styles.noMatchesPrimary}>
+        No matches for “{query.trim()}”.
+      </Text>
+      <Text style={styles.noMatchesHint}>Try a different word.</Text>
     </View>
   );
 }
@@ -106,6 +202,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: color.paper,
   },
+  list: {
+    flex: 1,
+  },
   listContent: {
     flexGrow: 1,
     paddingHorizontal: space.xl,
@@ -119,6 +218,9 @@ const styles = StyleSheet.create({
     paddingTop: space.lg,
     paddingBottom: space.xl,
     gap: space.xs,
+  },
+  searchSlot: {
+    marginTop: space.base,
   },
   title: {
     ...text.displaySerif,
@@ -150,6 +252,22 @@ const styles = StyleSheet.create({
   },
   emptyHintAccent: {
     color: color.accent,
+  },
+  noMatches: {
+    paddingTop: space.xxxl,
+    paddingBottom: space.xxl,
+    alignItems: "center",
+    gap: space.xs,
+  },
+  noMatchesPrimary: {
+    ...text.body,
+    color: color.ink,
+    textAlign: "center",
+  },
+  noMatchesHint: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    textAlign: "center",
   },
   skeletonRow: {
     paddingVertical: space.lg,
