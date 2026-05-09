@@ -5,19 +5,19 @@
  * Paper-light sheet sliding up from below. Editorial price block, single
  * accent CTA, quiet text-link cancel. Tier-aware pricing comes from the
  * caller; we only display.
+ *
+ * Failure handling is delegated upward — the parent owns the
+ * PurchaseFailureSheet. We classify the RevenueCat error here, swallow
+ * cancellations silently, and call onError(classified) for everything
+ * else so the parent can surface a paper-light retry sheet.
  */
 import { useState } from "react";
-import {
-  Alert,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { purchaseCredit } from "../services/revenucat";
+import { classifySwitchError } from "../lib/switchErrors";
+import type { SwitchFailure } from "../lib/switchErrors";
 import { color, font, layout, space, text } from "../theme/tokens";
 
 interface Props {
@@ -25,6 +25,7 @@ interface Props {
   tier: "free" | "plus" | "pro";
   onClose: () => void;
   onPurchased: () => void;
+  onError: (failure: SwitchFailure) => void;
 }
 
 const PRICES: Record<string, number> = { free: 5, plus: 4, pro: 3 };
@@ -34,6 +35,7 @@ export function SubscriptionModal({
   tier,
   onClose,
   onPurchased,
+  onError,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const price = PRICES[tier];
@@ -44,10 +46,15 @@ export function SubscriptionModal({
       await purchaseCredit(tier);
       onPurchased();
       onClose();
-    } catch (error: any) {
-      if (!error.userCancelled) {
-        Alert.alert("Couldn't complete purchase", error.message);
+    } catch (err: unknown) {
+      const classified = classifySwitchError(err);
+      if (classified.kind === "cancelled") {
+        // User backed out of the system payment dialog — keep the modal
+        // open so they can decide again or dismiss themselves.
+        return;
       }
+      onClose();
+      onError(classified);
     } finally {
       setLoading(false);
     }

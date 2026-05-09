@@ -3,25 +3,31 @@
  * Account — paper-light editorial settings page.
  *
  * Sections separated by hairlines, each with an uppercase Label eyebrow and
- * a serif value line. No cards. Plan + Deep Dive minutes (paid only) +
- * Voice. Three actions at the bottom: buy extra credit, upgrade (free only),
- * sign out.
- *
- * SubscriptionModal and PaywallScreen still render in the legacy dark
- * theme; they trigger from this screen's actions and are queued for a
- * polish pass.
+ * a serif value line. No cards. Plan, Deep Dive minutes (paid only), Voice
+ * — each tappable row pushes to its dedicated screen. Two actions at the
+ * bottom: buy extra credit, sign out.
  */
-import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import {
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "../../src/hooks/useAuth";
 import { useSubscription } from "../../src/hooks/useSubscription";
 import { useProfile } from "../../src/hooks/useProfile";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
 import { SubscriptionModal } from "../../src/components/SubscriptionModal";
-import { PaywallScreen } from "../../src/components/PaywallScreen";
+import { PurchaseFailureSheet } from "../../src/components/PurchaseFailureSheet";
+import { CreditAddedSheet } from "../../src/components/CreditAddedSheet";
+import type { SwitchFailure } from "../../src/lib/switchErrors";
+import { getStoreSubscriptionUrl } from "../../src/lib/tiers";
 import { color, font, layout, space, text } from "../../src/theme/tokens";
 
 const CREDIT_PRICES: Record<string, number> = { free: 5, plus: 4, pro: 3 };
@@ -51,16 +57,65 @@ export default function Account() {
   const { subscription, loading, refresh } = useSubscription();
   const { profile } = useProfile();
   const [showCreditModal, setShowCreditModal] = useState(false);
-  const [showPaywall, setShowPaywall] = useState(false);
+  const [creditFailure, setCreditFailure] = useState<SwitchFailure | null>(null);
+  const [creditCelebration, setCreditCelebration] = useState<{
+    creditsAfter: number;
+  } | null>(null);
+  // Optimistic delta added to the credit count the moment a purchase
+  // resolves on RevenueCat. Cleared once the server-side row catches up
+  // (RC webhook → Supabase update → useSubscription refetch).
+  const [optimisticCredits, setOptimisticCredits] = useState(0);
+
+  // Refetch every time Account regains focus so a tier change made on
+  // /plans is reflected here without needing a manual pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const serverCredits = subscription?.creditsRemaining ?? 0;
+
+  // Drop the optimistic bump as soon as the server-side credit count has
+  // moved by at least the bumped amount. Conservative match — avoids
+  // double-counting if the user buys multiple credits in a row.
+  useEffect(() => {
+    if (optimisticCredits === 0) return;
+    setOptimisticCredits(0);
+    // Intentionally re-run only when serverCredits changes; the
+    // optimistic delta is a one-shot bump, not a sticky override.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverCredits]);
 
   if (loading) return <LoadingOverlay message="Loading account" />;
 
   const tierLabel = TIER_LABELS[subscription?.tier ?? "free"];
   const creditPrice = CREDIT_PRICES[subscription?.tier ?? "free"];
-  const credits = subscription?.creditsRemaining ?? 0;
-  const isFree = subscription?.tier === "free";
+  const credits = serverCredits + optimisticCredits;
   const hasDeepDive = !!subscription && subscription.tier !== "free";
   const renewal = formatRenewalDate(subscription?.renewalDate ?? null);
+  const planValue = `${tierLabel} · ${credits} ${credits === 1 ? "credit" : "credits"}${
+    renewal ? ` · resets ${renewal}` : ""
+  }`;
+
+  const handleCreditPurchased = () => {
+    const next = serverCredits + optimisticCredits + 1;
+    setOptimisticCredits((n) => n + 1);
+    setCreditCelebration({ creditsAfter: next });
+    void refresh();
+  };
+
+  const handleCreditFailureRetry = () => {
+    setCreditFailure(null);
+    setShowCreditModal(true);
+  };
+
+  const handleCreditFailureSecondary = () => {
+    if (creditFailure?.secondary === "openSettings") {
+      void Linking.openURL(getStoreSubscriptionUrl());
+    }
+    setCreditFailure(null);
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
@@ -74,13 +129,11 @@ export default function Account() {
           {user?.email && <Text style={styles.email}>{user.email}</Text>}
         </View>
 
-        <Section eyebrow="Plan">
-          <Text style={styles.sectionValue}>{tierLabel}</Text>
-          <Text style={styles.sectionMeta}>
-            {credits} {credits === 1 ? "credit" : "credits"} remaining
-            {renewal ? ` · resets ${renewal}` : ""}
-          </Text>
-        </Section>
+        <NavRow
+          eyebrow="Plan"
+          value={planValue}
+          onPress={() => router.push("/plans")}
+        />
 
         {hasDeepDive && subscription && (
           <Section eyebrow="Deep Dive">
@@ -105,12 +158,6 @@ export default function Account() {
             label={`Buy extra credit ($${creditPrice})`}
             onPress={() => setShowCreditModal(true)}
           />
-          {isFree && (
-            <FilledPill
-              label="Upgrade to Plus"
-              onPress={() => setShowPaywall(true)}
-            />
-          )}
         </View>
       </ScrollView>
 
@@ -126,20 +173,34 @@ export default function Account() {
       </View>
 
       <SubscriptionModal
-        visible={showCreditModal}
+        visible={
+          showCreditModal &&
+          creditFailure === null &&
+          creditCelebration === null
+        }
         tier={subscription?.tier || "free"}
         onClose={() => setShowCreditModal(false)}
-        onPurchased={refresh}
+        onPurchased={handleCreditPurchased}
+        onError={(failure) => setCreditFailure(failure)}
       />
-      {showPaywall && (
-        <PaywallScreen
-          onClose={() => setShowPaywall(false)}
-          onPurchased={() => {
-            setShowPaywall(false);
-            refresh();
-          }}
-        />
-      )}
+
+      <PurchaseFailureSheet
+        visible={creditFailure !== null}
+        failure={creditFailure}
+        eyebrow="Couldn't buy"
+        onRetry={handleCreditFailureRetry}
+        onSecondary={handleCreditFailureSecondary}
+        onDismiss={() => setCreditFailure(null)}
+      />
+
+      <CreditAddedSheet
+        visible={creditCelebration !== null}
+        creditsAfter={creditCelebration?.creditsAfter ?? 0}
+        onDismiss={() => {
+          setCreditCelebration(null);
+          router.replace("/(tabs)/generate");
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -204,22 +265,6 @@ function OutlinePill({ label, onPress }: PillProps) {
       ]}
     >
       <Text style={styles.pillOutlineLabel}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function FilledPill({ label, onPress }: PillProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.pillFilled,
-        pressed && styles.pillPressed,
-      ]}
-    >
-      <Text style={styles.pillFilledLabel}>{label}</Text>
     </Pressable>
   );
 }
@@ -302,19 +347,6 @@ const styles = StyleSheet.create({
     fontFamily: font.sansSemiBold,
     fontSize: 16,
     color: color.accent,
-    letterSpacing: -0.1,
-  },
-  pillFilled: {
-    height: 56,
-    borderRadius: 999,
-    backgroundColor: color.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pillFilledLabel: {
-    fontFamily: font.sansSemiBold,
-    fontSize: 16,
-    color: color.paper,
     letterSpacing: -0.1,
   },
   pillPressed: {

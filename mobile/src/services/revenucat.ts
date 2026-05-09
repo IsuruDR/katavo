@@ -34,6 +34,28 @@ export async function purchasePackage(pkg: PurchasesPackage): Promise<CustomerIn
   return customerInfo;
 }
 
+/**
+ * Resolve the package for a paid tier and run the in-app purchase.
+ * RevenueCat handles upgrade vs same-group downgrade transparently — the
+ * caller doesn't need to differentiate. Throws on user cancellation
+ * (error.userCancelled === true) and on configuration errors (offering
+ * missing, package missing). The caller is responsible for refreshing
+ * subscription state on success.
+ */
+export async function purchaseTier(productId: string): Promise<CustomerInfo> {
+  const offering = await getOfferings();
+  if (!offering) {
+    throw new Error("No subscription offering is currently available.");
+  }
+  const pkg = offering.availablePackages.find(
+    (p) => p.product.identifier === productId,
+  );
+  if (!pkg) {
+    throw new Error(`No package found for ${productId}.`);
+  }
+  return purchasePackage(pkg);
+}
+
 export async function purchaseCredit(tier: "free" | "plus" | "pro"): Promise<CustomerInfo> {
   const productId = {
     free: CREDIT_PRODUCTS.CREDIT_FREE,
