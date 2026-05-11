@@ -42,8 +42,11 @@ export const TARGET_CHAPTER_COUNT = 4; // Intro + 2-3 sections + conclusion
 // calls per podcast so we don't burn through RPM quota.
 export const MAX_WORDS_PER_TTS_CHUNK = 350;
 export const TTS_CONCURRENCY_PER_PODCAST = 4;
-export const TTS_RETRY_ATTEMPTS = 2; // 1 try + 2 retries = 3 attempts total
-export const TTS_RETRY_BASE_DELAY_MS = 2000;
+// Same retry budget tagInjector uses (~21s worst case) — Gemini 503 spikes
+// recover in 5-15s; we'd rather wait than fail a podcast that has 5+ other
+// chunks already synthesized successfully.
+export const TTS_RETRY_ATTEMPTS = 3; // 1 try + 3 retries = 4 attempts total
+export const TTS_RETRY_BASE_DELAY_MS = 3000; // 3s, 6s, 12s
 
 // Prompts
 export const BRIEF_BUILDER_PROMPT = `You are preparing a research brief for a podcast episode.

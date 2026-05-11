@@ -30,6 +30,7 @@ import {
 import type { TTSProvider } from "../providers/ttsBase.js";
 import { GeminiTTS } from "../providers/ttsGemini.js";
 import { getSupabaseClient } from "../providers/supabaseClient.js";
+import { retryTransient } from "../retry.js";
 import { persistStatus } from "./persistStatus.js";
 import type { PipelineStateType } from "../state.js";
 
@@ -133,19 +134,11 @@ async function synthesizeWithRetry(
   tts: TTSProvider,
   voice: string | undefined,
 ): Promise<Buffer> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt <= TTS_RETRY_ATTEMPTS; attempt++) {
-    try {
-      return await tts.synthesize(text, voice);
-    } catch (err) {
-      lastErr = err;
-      if (attempt < TTS_RETRY_ATTEMPTS) {
-        const delayMs = TTS_RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
-        await new Promise((r) => setTimeout(r, delayMs));
-      }
-    }
-  }
-  throw lastErr;
+  return retryTransient(() => tts.synthesize(text, voice), {
+    retries: TTS_RETRY_ATTEMPTS,
+    baseDelayMs: TTS_RETRY_BASE_DELAY_MS,
+    label: "audioProducer",
+  });
 }
 
 export async function stitchAudio(
