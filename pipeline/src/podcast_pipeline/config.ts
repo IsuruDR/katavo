@@ -35,6 +35,16 @@ export const MAX_RESEARCH_RETRIES = 2;
 export const TARGET_WORD_COUNT = 6600; // tripled from 2200 — long-form ~40min episodes
 export const TARGET_CHAPTER_COUNT = 4; // Intro + 2-3 sections + conclusion
 
+// TTS chunking — Gemini TTS rushes the latter half of audio when input
+// exceeds ~400 words per call. Chapter markers in the script are the
+// natural boundary; if a chapter still exceeds the threshold, fall back
+// to sentence-aware sub-splitting. Concurrency caps in-flight Gemini
+// calls per podcast so we don't burn through RPM quota.
+export const MAX_WORDS_PER_TTS_CHUNK = 350;
+export const TTS_CONCURRENCY_PER_PODCAST = 4;
+export const TTS_RETRY_ATTEMPTS = 2; // 1 try + 2 retries = 3 attempts total
+export const TTS_RETRY_BASE_DELAY_MS = 2000;
+
 // Prompts
 export const BRIEF_BUILDER_PROMPT = `You are preparing a research brief for a podcast episode.
 Given a topic and the user's answers to clarifying questions, produce a structured research brief.

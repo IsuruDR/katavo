@@ -1,13 +1,32 @@
 /**
  * Converts script to audio via TTS, stitches ads, uploads to Supabase Storage.
- * Uses ffmpeg for audio concatenation.
+ *
+ * Chunking strategy: split each text block on [CHAPTER:] markers; if any
+ * resulting chapter exceeds MAX_WORDS_PER_TTS_CHUNK, sub-split on sentence
+ * boundaries. Gemini TTS rushes the latter half of audio output when given
+ * inputs over roughly 400 words in a single call — chapter-sized chunks
+ * keep each call inside the safe zone.
+ *
+ * Chunks are synthesized with bounded parallelism so a single podcast
+ * doesn't burn through Gemini's RPM quota; ad segments stay sequential
+ * (just disk reads). Concat re-encodes with libmp3lame to produce a
+ * clean single-stream MP3 with a correct Xing header — `-c copy` would
+ * carry over the first segment's header and cause players to speed up
+ * the latter portion to fit reported duration.
  */
 
 import { execSync } from "node:child_process";
 import { writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { AD_PRE_ROLL_MARKER, AD_MID_ROLL_MARKER } from "../config.js";
+import {
+  AD_PRE_ROLL_MARKER,
+  AD_MID_ROLL_MARKER,
+  MAX_WORDS_PER_TTS_CHUNK,
+  TTS_CONCURRENCY_PER_PODCAST,
+  TTS_RETRY_ATTEMPTS,
+  TTS_RETRY_BASE_DELAY_MS,
+} from "../config.js";
 import type { TTSProvider } from "../providers/ttsBase.js";
 import { GeminiTTS } from "../providers/ttsGemini.js";
 import { getSupabaseClient } from "../providers/supabaseClient.js";
@@ -26,7 +45,65 @@ function getTtsProvider(): TTSProvider {
   return new GeminiTTS();
 }
 
-export function splitScriptSegments(script: string): ScriptSegment[] {
+function countWords(s: string): number {
+  return s.trim().split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Sentence-aware fallback chunker. Only invoked when a chapter exceeds
+ * maxWords. Greedy: accumulate sentences until adding one more would
+ * push past the limit, then start a new chunk. If a single sentence is
+ * already over the limit, it ships as its own oversized chunk — better
+ * than mid-sentence cuts.
+ */
+export function splitOnSentences(text: string, maxWords: number): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) ?? [text];
+  const chunks: string[] = [];
+  let current = "";
+  let currentWords = 0;
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim();
+    if (!trimmed) continue;
+    const sentenceWords = countWords(trimmed);
+    if (currentWords > 0 && currentWords + sentenceWords > maxWords) {
+      chunks.push(current);
+      current = trimmed;
+      currentWords = sentenceWords;
+    } else {
+      current = current ? `${current} ${trimmed}` : trimmed;
+      currentWords += sentenceWords;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+/**
+ * Split a text block on [CHAPTER:] markers, then apply the word-count
+ * guard. Each output string is ready for a single Gemini TTS call.
+ */
+export function splitTextIntoChapterChunks(
+  text: string,
+  maxWords = MAX_WORDS_PER_TTS_CHUNK,
+): string[] {
+  const chapterPieces = text.split(/\[CHAPTER:[^\]]+\]/);
+  const result: string[] = [];
+  for (const piece of chapterPieces) {
+    const trimmed = piece.trim();
+    if (!trimmed) continue;
+    if (countWords(trimmed) <= maxWords) {
+      result.push(trimmed);
+    } else {
+      result.push(...splitOnSentences(trimmed, maxWords));
+    }
+  }
+  return result;
+}
+
+export function splitScriptSegments(
+  script: string,
+  maxWordsPerChunk = MAX_WORDS_PER_TTS_CHUNK,
+): ScriptSegment[] {
   const segments: ScriptSegment[] = [];
   const escapedPre = AD_PRE_ROLL_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const escapedMid = AD_MID_ROLL_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -41,14 +118,34 @@ export function splitScriptSegments(script: string): ScriptSegment[] {
     } else if (stripped === AD_MID_ROLL_MARKER) {
       segments.push({ type: "ad", adType: "mid_roll" });
     } else {
-      const cleanText = stripped.replace(/\[CHAPTER:[^\]]+\]\n?/g, "").trim();
-      if (cleanText) {
-        segments.push({ type: "text", content: cleanText });
+      const chunks = splitTextIntoChapterChunks(stripped, maxWordsPerChunk);
+      for (const content of chunks) {
+        segments.push({ type: "text", content });
       }
     }
   }
 
   return segments;
+}
+
+async function synthesizeWithRetry(
+  text: string,
+  tts: TTSProvider,
+  voice: string | undefined,
+): Promise<Buffer> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= TTS_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await tts.synthesize(text, voice);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < TTS_RETRY_ATTEMPTS) {
+        const delayMs = TTS_RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 export async function stitchAudio(
@@ -59,23 +156,50 @@ export async function stitchAudio(
   const tempDir = mkdtempSync(join(tmpdir(), "podcast-audio-"));
 
   try {
-    const partFiles: string[] = [];
+    // Synthesize text segments with bounded parallelism. Workers pull from
+    // a shared cursor, write each result keyed by original segment index.
+    const textIndices: number[] = [];
+    segments.forEach((seg, i) => {
+      if (seg.type === "text" && seg.content) textIndices.push(i);
+    });
 
+    const textPaths = new Map<number, string>();
+    let cursor = 0;
+    const workerCount = Math.min(TTS_CONCURRENCY_PER_PODCAST, textIndices.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const slot = cursor++;
+        if (slot >= textIndices.length) return;
+        const segIdx = textIndices[slot];
+        const seg = segments[segIdx];
+        const audioBytes = await synthesizeWithRetry(
+          seg.content!,
+          tts,
+          voice ?? undefined,
+        );
+        const partPath = join(tempDir, `part_${segIdx}.mp3`);
+        writeFileSync(partPath, audioBytes);
+        textPaths.set(segIdx, partPath);
+      }
+    });
+    await Promise.all(workers);
+
+    // Build the ordered file list — ads interleaved with synthesized chunks
+    // at their original positions.
+    const partFiles: string[] = [];
     for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-      if (segment.type === "ad" && segment.adType) {
-        const adFile = join(AD_AUDIO_DIR, `${segment.adType}.mp3`);
+      const seg = segments[i];
+      if (seg.type === "ad" && seg.adType) {
+        const adFile = join(AD_AUDIO_DIR, `${seg.adType}.mp3`);
         try {
           readFileSync(adFile);
           partFiles.push(adFile);
         } catch {
           // Ad file not found — skip
         }
-      } else if (segment.type === "text" && segment.content) {
-        const audioBytes = await tts.synthesize(segment.content, voice ?? undefined);
-        const partPath = join(tempDir, `part_${i}.mp3`);
-        writeFileSync(partPath, audioBytes);
-        partFiles.push(partPath);
+      } else if (seg.type === "text" && seg.content) {
+        const path = textPaths.get(i);
+        if (path) partFiles.push(path);
       }
     }
 
@@ -87,9 +211,15 @@ export async function stitchAudio(
     const listContent = partFiles.map((f) => `file '${f}'`).join("\n");
     writeFileSync(listFile, listContent);
 
+    // Re-encode at concat (not -c copy). With multiple per-chapter chunks,
+    // -c copy would preserve only the first segment's Xing/LAME header,
+    // and players would speed up the latter portion to fit reported
+    // duration. libmp3lame qscale=2 here matches the per-chunk encode in
+    // ttsGemini and regenerates a single correct header for the merged
+    // stream.
     const outputPath = join(tempDir, "output.mp3");
     execSync(
-      `ffmpeg -f concat -safe 0 -i "${listFile}" -c copy "${outputPath}" -y`,
+      `ffmpeg -f concat -safe 0 -i "${listFile}" -c:a libmp3lame -qscale:a 2 "${outputPath}" -y`,
       { stdio: "pipe" },
     );
 
