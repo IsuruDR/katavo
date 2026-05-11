@@ -1,7 +1,15 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
+import { setMaxListeners } from "node:events";
 import "dotenv/config";
+
+// Bounded-parallel TTS workers + LangGraph + Gemini SDK each attach abort
+// listeners on shared signals during concurrent operations. The default
+// Node ceiling of 10 trips MaxListenersExceededWarning even though no
+// real leak exists. Bump it once at boot; functional limit was never
+// the actual concern here.
+setMaxListeners(20);
 
 import { generateQuestionsRoute } from "./routes/generateQuestions.js";
 import { submitPodcastRoute, setJobManager } from "./routes/submitPodcast.js";

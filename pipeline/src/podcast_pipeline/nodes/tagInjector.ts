@@ -3,6 +3,27 @@ import { getGeminiClient } from "../providers/gemini.js";
 import { AUDIO_TAGS, GEMINI_TAG_INJECTOR_MODEL } from "../config.js";
 import type { PipelineStateType } from "../state.js";
 
+const TAG_INJECTOR_RETRY_ATTEMPTS = 3; // 1 try + 3 retries = 4 attempts total
+const TAG_INJECTOR_RETRY_BASE_MS = 3000; // 3s, 6s, 12s — total worst-case ~21s before fallthrough
+
+// Transient errors worth retrying — 429 (rate limit), 5xx, and any error
+// whose message hints at the high-demand condition we keep hitting.
+function isTransientError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { status?: number; message?: string };
+  if (typeof e.status === "number" && (e.status === 429 || e.status >= 500)) {
+    return true;
+  }
+  const msg = String(e.message ?? "").toLowerCase();
+  return (
+    msg.includes("503") ||
+    msg.includes("unavailable") ||
+    msg.includes("high demand") ||
+    msg.includes("rate limit") ||
+    msg.includes("overloaded")
+  );
+}
+
 const TAG_INJECTOR_PROMPT = (script: string, tags: readonly string[]) => `
 You are inserting audio tags into a podcast script that will be read aloud
 by an expressive TTS model. Without tags the delivery sounds flat; your
@@ -59,27 +80,45 @@ export async function tagInjector(
 
   const client = getGeminiClient();
 
-  try {
-    const response = await client.models.generateContent({
-      model: GEMINI_TAG_INJECTOR_MODEL,
-      contents: TAG_INJECTOR_PROMPT(script, AUDIO_TAGS),
-    });
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= TAG_INJECTOR_RETRY_ATTEMPTS; attempt++) {
+    try {
+      const response = await client.models.generateContent({
+        model: GEMINI_TAG_INJECTOR_MODEL,
+        contents: TAG_INJECTOR_PROMPT(script, AUDIO_TAGS),
+      });
 
-    const out = (response as { text?: string }).text?.trim() ?? "";
+      const out = (response as { text?: string }).text?.trim() ?? "";
 
-    if (!out) {
-      console.warn("[tagInjector] fallthrough: empty model output");
-      return { taggedScript: script };
+      if (!out) {
+        // Non-transient validation failure — don't retry, just fall through.
+        console.warn("[tagInjector] fallthrough: empty model output");
+        return { taggedScript: script };
+      }
+
+      if (countChapterMarkers(out) !== countChapterMarkers(script)) {
+        console.warn("[tagInjector] fallthrough: chapter-marker count mismatch");
+        return { taggedScript: script };
+      }
+
+      return { taggedScript: out };
+    } catch (err) {
+      lastErr = err;
+      const transient = isTransientError(err);
+      if (transient && attempt < TAG_INJECTOR_RETRY_ATTEMPTS) {
+        const delayMs = TAG_INJECTOR_RETRY_BASE_MS * Math.pow(2, attempt);
+        console.warn(
+          `[tagInjector] transient error (attempt ${attempt + 1}/${TAG_INJECTOR_RETRY_ATTEMPTS + 1}), retrying in ${delayMs}ms`,
+          { error: err },
+        );
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      // Non-transient or out of retries — bail out and fall through.
+      break;
     }
-
-    if (countChapterMarkers(out) !== countChapterMarkers(script)) {
-      console.warn("[tagInjector] fallthrough: chapter-marker count mismatch");
-      return { taggedScript: script };
-    }
-
-    return { taggedScript: out };
-  } catch (err) {
-    console.warn("[tagInjector] fallthrough: SDK error", { error: err });
-    return { taggedScript: script };
   }
+
+  console.warn("[tagInjector] fallthrough: SDK error after retries", { error: lastErr });
+  return { taggedScript: script };
 }
