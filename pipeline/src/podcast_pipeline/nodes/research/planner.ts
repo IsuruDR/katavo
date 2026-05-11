@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
-import { RESEARCH_MODELS, RESEARCH_TEMPERATURES } from "../../config.js";
+import { RESEARCH_MAX_TOKENS, RESEARCH_MODELS, RESEARCH_TEMPERATURES } from "../../config.js";
 import { PLANNER_PROMPT, PLANNER_RETRY_CONTEXT } from "./prompts.js";
 
 export const SubagentTaskSchema = z.object({
@@ -57,6 +57,7 @@ export async function runPlanner(
 
   const llm = makeOpenRouterModel(RESEARCH_MODELS.reasoning, {
     temperature: RESEARCH_TEMPERATURES.planner,
+    maxTokens: RESEARCH_MAX_TOKENS.planner,
   });
   const structured = llm.withStructuredOutput(PlannerOutputSchema, { name: "planner_output" });
   const result = await structured.invoke(prompt, config);

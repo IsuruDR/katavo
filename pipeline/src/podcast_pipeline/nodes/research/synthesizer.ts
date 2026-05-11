@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
-import { RESEARCH_MODELS, RESEARCH_TEMPERATURES } from "../../config.js";
+import { RESEARCH_MAX_TOKENS, RESEARCH_MODELS, RESEARCH_TEMPERATURES } from "../../config.js";
 import { SYNTHESIZER_PROMPT } from "./prompts.js";
 import type { SubagentFindings } from "./subagent.js";
 
@@ -20,6 +20,7 @@ export async function runSynthesizer(
 ): Promise<ResearchDocument> {
   const llm = makeOpenRouterModel(RESEARCH_MODELS.reasoning, {
     temperature: RESEARCH_TEMPERATURES.synthesizer,
+    maxTokens: RESEARCH_MAX_TOKENS.synthesizer,
   });
   const structured = llm.withStructuredOutput(ResearchDocumentSchema, { name: "research_document" });
 

@@ -14,6 +14,17 @@ export const RESEARCH_TEMPERATURES = {
   subagent: 0.4,
 } as const;
 
+// Per-role maxTokens for OpenRouter. Sized to fit realistic output with
+// 1.5-2x safety margin so output never truncates; OpenRouter reserves
+// budget upfront against this number so unbounded caps trigger 402s
+// when the account balance is tight. Bump only if Langfuse traces show
+// `finish_reason: "length"` from one of these roles.
+export const RESEARCH_MAX_TOKENS = {
+  planner: 4096, // JSON list of 3-8 subagent tasks; actual ~1500-2500
+  synthesizer: 16384, // Full research document with sections + sources; actual ~8000-12000
+  subagent: 8192, // Focused findings for one question; actual ~2000-4000
+} as const;
+
 export const RESEARCH_BUDGETS: Record<string, { maxSearches: number; maxReflections: number }> = {
   free: { maxSearches: 2, maxReflections: 1 },
   plus: { maxSearches: 3, maxReflections: 2 },

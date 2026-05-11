@@ -3,7 +3,12 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { createDeepAgent } from "deepagents";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
 import { makeTavilyTool } from "../../tools/tavilySearch.js";
-import { RESEARCH_MODELS, RESEARCH_TEMPERATURES, SUBAGENT_WALLCLOCK_MS } from "../../config.js";
+import {
+  RESEARCH_MAX_TOKENS,
+  RESEARCH_MODELS,
+  RESEARCH_TEMPERATURES,
+  SUBAGENT_WALLCLOCK_MS,
+} from "../../config.js";
 import { SUBAGENT_SYSTEM_PROMPT, SUBAGENT_TASK_PROMPT } from "./prompts.js";
 import type { SubagentTask } from "./planner.js";
 
@@ -39,6 +44,7 @@ async function invokeOnce(
   const tool = makeTavilyTool({ taskId: task.id, maxSearches: opts.maxSearches });
   const llm = makeOpenRouterModel(RESEARCH_MODELS.subagent, {
     temperature: RESEARCH_TEMPERATURES.subagent,
+    maxTokens: RESEARCH_MAX_TOKENS.subagent,
   });
 
   const systemPrompt = SUBAGENT_SYSTEM_PROMPT.replace("{maxSearches}", String(opts.maxSearches)).replace(
