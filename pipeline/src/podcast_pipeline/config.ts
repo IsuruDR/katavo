@@ -53,6 +53,16 @@ export const TARGET_CHAPTER_COUNT = 4; // Intro + 2-3 sections + conclusion
 // calls per podcast so we don't burn through RPM quota.
 export const MAX_WORDS_PER_TTS_CHUNK = 350;
 export const TTS_CONCURRENCY_PER_PODCAST = 4;
+
+// Per-chunk WPM validation — safety net for the cases where a 350-word
+// chunk still happens to rush. After each synth we measure duration and
+// compute WPM = words / duration * 60. If above MAX_CHUNK_WPM we retry
+// once; if still rushed we sub-split the chunk in half (one recursion
+// level, no further) and concat the resulting halves. Defense in depth;
+// the primary fix is chunking, this catches edge cases.
+export const MAX_CHUNK_WPM = 200;
+export const MIN_SUB_SPLIT_WORDS = 60; // chunks smaller than this skip sub-split (halves would be too tiny)
+export const MIN_WORDS_FOR_WPM_CHECK = 10; // tiny chunks have noisy WPM; skip validation
 // Same retry budget tagInjector uses (~21s worst case) — Gemini 503 spikes
 // recover in 5-15s; we'd rather wait than fail a podcast that has 5+ other
 // chunks already synthesized successfully.

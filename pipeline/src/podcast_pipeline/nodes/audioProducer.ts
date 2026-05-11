@@ -22,7 +22,10 @@ import { tmpdir } from "node:os";
 import {
   AD_PRE_ROLL_MARKER,
   AD_MID_ROLL_MARKER,
+  MAX_CHUNK_WPM,
   MAX_WORDS_PER_TTS_CHUNK,
+  MIN_SUB_SPLIT_WORDS,
+  MIN_WORDS_FOR_WPM_CHECK,
   TTS_CONCURRENCY_PER_PODCAST,
   TTS_RETRY_ATTEMPTS,
   TTS_RETRY_BASE_DELAY_MS,
@@ -141,6 +144,138 @@ async function synthesizeWithRetry(
   });
 }
 
+/**
+ * Measure audio duration in seconds via ffprobe. Returns 0 on failure
+ * so callers can treat "no measurement" as "skip WPM check" rather
+ * than triggering a false-positive retry.
+ */
+export function measureChunkDuration(audioPath: string): number {
+  try {
+    const out = execSync(
+      `ffprobe -v error -show_entries format=duration -of csv=p=0 "${audioPath}"`,
+      { encoding: "utf-8" },
+    )
+      .toString()
+      .trim();
+    return parseFloat(out) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+interface ValidatedChunkOptions {
+  text: string;
+  tts: TTSProvider;
+  voice: string | undefined;
+  tempDir: string;
+  label: string;
+  allowSubSplit: boolean;
+}
+
+/**
+ * Per-chunk synth with WPM validation + recursive sub-split fallback.
+ *
+ * Flow:
+ *   1. Synthesize → write to disk → measure duration → compute WPM
+ *   2. WPM acceptable → return path
+ *   3. WPM rushed → retry once (Gemini's output has some non-determinism)
+ *   4. Still rushed AND chunk big enough → sub-split into 2 halves,
+ *      synthesize each (with allowSubSplit=false, no further recursion),
+ *      concat halves into one replacement file
+ *   5. Sub-split also rushed OR chunk too small to sub-split → ship
+ *      the best (slowest-WPM) attempt and log a warning
+ *
+ * The sub-split path bounds blast radius: 1 level of recursion only,
+ * so worst-case API calls per chunk = 2 (initial retry) + 2 (sub-halves
+ * × initial retry only) = 4 API calls per chunk before we give up.
+ */
+async function synthesizeChunkValidated(opts: ValidatedChunkOptions): Promise<string> {
+  const { text, tts, voice, tempDir, label, allowSubSplit } = opts;
+  const wordCount = countWords(text);
+
+  let bestPath: string | null = null;
+  let bestWpm = Infinity;
+
+  // 1 initial try + 1 retry on rushed output
+  for (let attempt = 0; attempt <= 1; attempt++) {
+    const audioBytes = await synthesizeWithRetry(text, tts, voice);
+    const partPath = join(tempDir, `part_${label}_a${attempt}.mp3`);
+    writeFileSync(partPath, audioBytes);
+
+    // Skip WPM validation for tiny chunks — measurement noise dominates signal.
+    if (wordCount < MIN_WORDS_FOR_WPM_CHECK) {
+      return partPath;
+    }
+
+    const durationSec = measureChunkDuration(partPath);
+    if (durationSec <= 0) {
+      // Couldn't measure — trust the audio rather than re-roll. ffprobe
+      // failure isn't grounds for a quality decision.
+      console.warn(
+        `[audioProducer] chunk "${label}" duration measurement failed; shipping without WPM check`,
+      );
+      return partPath;
+    }
+
+    const wpm = (wordCount / durationSec) * 60;
+    if (wpm <= MAX_CHUNK_WPM) {
+      return partPath;
+    }
+
+    if (wpm < bestWpm) {
+      bestWpm = wpm;
+      bestPath = partPath;
+    }
+    console.warn(
+      `[audioProducer] chunk "${label}" attempt ${attempt + 1}: WPM=${wpm.toFixed(0)} > ${MAX_CHUNK_WPM} (rushed)`,
+    );
+  }
+
+  // Both attempts rushed — try one level of sub-split if chunk is big enough.
+  if (allowSubSplit && wordCount > MIN_SUB_SPLIT_WORDS) {
+    const halfWords = Math.max(1, Math.floor(wordCount / 2));
+    const subTexts = splitOnSentences(text, halfWords);
+
+    if (subTexts.length >= 2) {
+      console.warn(
+        `[audioProducer] chunk "${label}" sub-splitting into ${subTexts.length} parts after rushed retries`,
+      );
+
+      const subPaths: string[] = [];
+      for (let i = 0; i < subTexts.length; i++) {
+        const subPath = await synthesizeChunkValidated({
+          text: subTexts[i],
+          tts,
+          voice,
+          tempDir,
+          label: `${label}_sub_${i}`,
+          allowSubSplit: false,
+        });
+        subPaths.push(subPath);
+      }
+
+      // Concat sub-chunks into a single replacement file at this label.
+      // Uses the same libmp3lame re-encode pattern as the outer concat
+      // so the combined file is a clean single-stream MP3 with a fresh
+      // Xing header.
+      const combinedPath = join(tempDir, `part_${label}_combined.mp3`);
+      const subListFile = join(tempDir, `sub_list_${label}.txt`);
+      writeFileSync(subListFile, subPaths.map((f) => `file '${f}'`).join("\n"));
+      execSync(
+        `ffmpeg -f concat -safe 0 -i "${subListFile}" -c:a libmp3lame -qscale:a 2 "${combinedPath}" -y`,
+        { stdio: "pipe" },
+      );
+      return combinedPath;
+    }
+  }
+
+  // No more fallback options — ship the best attempt we have.
+  console.warn(
+    `[audioProducer] chunk "${label}" all attempts rushed, shipping best (WPM=${bestWpm.toFixed(0)})`,
+  );
+  return bestPath!;
+}
+
 export async function stitchAudio(
   segments: ScriptSegment[],
   tts: TTSProvider,
@@ -165,13 +300,14 @@ export async function stitchAudio(
         if (slot >= textIndices.length) return;
         const segIdx = textIndices[slot];
         const seg = segments[segIdx];
-        const audioBytes = await synthesizeWithRetry(
-          seg.content!,
+        const partPath = await synthesizeChunkValidated({
+          text: seg.content!,
           tts,
-          voice ?? undefined,
-        );
-        const partPath = join(tempDir, `part_${segIdx}.mp3`);
-        writeFileSync(partPath, audioBytes);
+          voice: voice ?? undefined,
+          tempDir,
+          label: String(segIdx),
+          allowSubSplit: true,
+        });
         textPaths.set(segIdx, partPath);
       }
     });
