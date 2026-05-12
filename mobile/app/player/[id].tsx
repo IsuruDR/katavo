@@ -92,7 +92,7 @@ export default function PlayerScreen() {
   const handleDive = useCallback(() => {
     if (!podcast || !currentChapter) return;
     if (diveLocked) {
-      router.push("/(tabs)/account");
+      router.push("/plans");
       return;
     }
     player.pause();

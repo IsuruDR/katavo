@@ -26,6 +26,7 @@ import { LoadingOverlay } from "../../src/components/LoadingOverlay";
 import { SubscriptionModal } from "../../src/components/SubscriptionModal";
 import { PurchaseFailureSheet } from "../../src/components/PurchaseFailureSheet";
 import { CreditAddedSheet } from "../../src/components/CreditAddedSheet";
+import { UpgradeRow } from "../../src/components/UpgradeRow";
 import type { SwitchFailure } from "../../src/lib/switchErrors";
 import { getStoreSubscriptionUrl } from "../../src/lib/tiers";
 import { color, font, layout, space, text } from "../../src/theme/tokens";
@@ -94,9 +95,10 @@ export default function Account() {
   const credits = serverCredits + optimisticCredits;
   const hasDeepDive = !!subscription && subscription.tier !== "free";
   const renewal = formatRenewalDate(subscription?.renewalDate ?? null);
-  const planValue = `${tierLabel} · ${credits} ${credits === 1 ? "credit" : "credits"}${
-    renewal ? ` · resets ${renewal}` : ""
-  }`;
+  const creditsLabel = `${credits} ${credits === 1 ? "credit" : "credits"}`;
+  const planSubtitle = renewal
+    ? `${creditsLabel} · resets ${renewal}`
+    : creditsLabel;
 
   const handleCreditPurchased = () => {
     const next = serverCredits + optimisticCredits + 1;
@@ -131,11 +133,12 @@ export default function Account() {
 
         <NavRow
           eyebrow="Plan"
-          value={planValue}
+          value={tierLabel}
+          subtitle={planSubtitle}
           onPress={() => router.push("/plans")}
         />
 
-        {hasDeepDive && subscription && (
+        {hasDeepDive && subscription ? (
           <Section eyebrow="Deep Dive">
             <Text style={styles.sectionValue}>
               {subscription.deepDiveMinutesRemaining} of{" "}
@@ -145,6 +148,16 @@ export default function Account() {
               <Text style={styles.sectionMeta}>Resets {renewal}</Text>
             )}
           </Section>
+        ) : (
+          <View>
+            <View style={styles.divider} />
+            <UpgradeRow
+              eyebrow="Deep Dive"
+              title="Voice Q&A on your podcast."
+              unlockTier="plus"
+              onPress={() => router.push("/plans")}
+            />
+          </View>
         )}
 
         <NavRow
@@ -225,22 +238,31 @@ function Section({ eyebrow, children }: SectionProps) {
 interface NavRowProps {
   eyebrow: string;
   value: string;
+  /**
+   * Optional second line below the value. Same visual treatment as
+   * UpgradeRow's trigger so locked rows and informational rows read with
+   * a consistent rhythm in the Account stack.
+   */
+  subtitle?: string;
   onPress: () => void;
 }
 
-function NavRow({ eyebrow, value, onPress }: NavRowProps) {
+function NavRow({ eyebrow, value, subtitle, onPress }: NavRowProps) {
   return (
     <View>
       <View style={styles.divider} />
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={`${eyebrow}: ${value}`}
+        accessibilityLabel={
+          subtitle ? `${eyebrow}: ${value}. ${subtitle}` : `${eyebrow}: ${value}`
+        }
         style={({ pressed }) => [styles.navRow, pressed && styles.navRowPressed]}
       >
         <View style={styles.navRowBody}>
           <Text style={styles.eyebrow}>{eyebrow}</Text>
           <Text style={styles.sectionValue}>{value}</Text>
+          {subtitle && <Text style={styles.navRowSubtitle}>{subtitle}</Text>}
         </View>
         <Feather name="chevron-right" size={20} color={color.inkSecondary} />
       </Pressable>
@@ -329,6 +351,13 @@ const styles = StyleSheet.create({
   },
   navRowBody: {
     flex: 1,
+  },
+  navRowSubtitle: {
+    fontFamily: font.sansMedium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: color.accent,
+    marginTop: space.xs,
   },
   actions: {
     paddingTop: space.xxl,

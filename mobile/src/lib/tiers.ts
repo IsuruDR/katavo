@@ -94,6 +94,30 @@ export function getDirection(from: Tier, to: Tier): Direction {
   return "same";
 }
 
+/**
+ * Catalogue of paywalled features and the minimum tier each requires.
+ * Single source of truth for locked-feature gating across the app — any
+ * surface that needs to ask "is this feature available to me?" reads
+ * from here so we never duplicate the tier comparison.
+ *
+ * Add new features here when they're introduced; UpgradeRow and any
+ * future banner / pill variants pick up the new entry automatically.
+ */
+export type LockableFeature = "deepDive" | "noAds" | "cheaperCredits";
+
+export const FEATURE_MIN_TIER: Record<LockableFeature, Tier> = {
+  deepDive: "plus",
+  noAds: "plus",
+  cheaperCredits: "plus",
+};
+
+export function isFeatureUnlocked(
+  feature: LockableFeature,
+  tier: Tier,
+): boolean {
+  return TIER_RANK[tier] >= TIER_RANK[FEATURE_MIN_TIER[feature]];
+}
+
 interface SwitchKey {
   from: Tier;
   to: Tier;
