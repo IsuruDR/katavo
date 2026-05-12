@@ -247,6 +247,166 @@ describe.skipIf(!envReady)("API integration (live deploy)", () => {
     );
   });
 
+  describe("POST /api/submit-podcast — expansions", () => {
+    // Helper: seed a parent podcast owned by `userId` with chapter_markers + chapter_transcripts
+    const seedParent = async (overrides: { chapter_transcripts?: Record<string, string> | null } = {}) => {
+      const { data, error } = await admin
+        .from("podcasts")
+        .insert({
+          user_id: userId,
+          topic: "Parent topic",
+          status: "complete",
+          chapter_markers: [
+            { timestampSeconds: 0, title: "Opening" },
+            { timestampSeconds: 100, title: "Middle" },
+            { timestampSeconds: 200, title: "Closer" },
+          ],
+          chapter_transcripts:
+            overrides.chapter_transcripts === undefined
+              ? { Opening: "open text", Middle: "mid text", Closer: "close text" }
+              : overrides.chapter_transcripts,
+          has_ads: false,
+        })
+        .select("id")
+        .single();
+      if (error || !data) throw error ?? new Error("seed parent failed");
+      // Need a research_contexts row so the join in fetchParentContext returns a doc
+      await admin.from("research_contexts").insert({
+        podcast_id: data.id,
+        research_document: { sections: [{ title: "S1", content: "C1." }] },
+        sources: [],
+        research_iterations: 1,
+      });
+      return data.id as string;
+    };
+
+    it("creates an expansion with parent_podcast_id + source_chapter_title set", async () => {
+      // Restore credits before this test (other tests may have left it at 0)
+      await admin.from("subscriptions").update({ credits_remaining: 8 }).eq("user_id", userId);
+
+      const parentId = await seedParent();
+
+      const res = await post(
+        "/api/submit-podcast",
+        { topic: "", parentPodcastId: parentId, sourceChapterTitle: "Opening" },
+        authHeader(),
+      );
+      expect(res.status).toBe(200);
+      const { podcastId: expansionId } = (await res.json()) as { podcastId: string };
+
+      const { data: row } = await admin
+        .from("podcasts")
+        .select("parent_podcast_id, source_chapter_title")
+        .eq("id", expansionId)
+        .single();
+      expect(row?.parent_podcast_id).toBe(parentId);
+      expect(row?.source_chapter_title).toBe("Opening");
+    });
+
+    it("returns 404 when parent is owned by a different user", async () => {
+      await admin.from("subscriptions").update({ credits_remaining: 8 }).eq("user_id", userId);
+      // Create a podcast owned by a fresh other user
+      const otherEmail = `apitest-other+${Date.now()}@example.com`;
+      const otherPassword = crypto.randomUUID().replace(/-/g, "");
+      const { data: otherCreated } = await admin.auth.admin.createUser({
+        email: otherEmail,
+        password: otherPassword,
+        email_confirm: true,
+      });
+      const otherUserId = otherCreated!.user!.id;
+      const { data: otherParent } = await admin
+        .from("podcasts")
+        .insert({
+          user_id: otherUserId,
+          topic: "Other user's parent",
+          status: "complete",
+          chapter_markers: [{ timestampSeconds: 0, title: "Only" }],
+          chapter_transcripts: { Only: "x" },
+          has_ads: false,
+        })
+        .select("id")
+        .single();
+      const otherParentId = otherParent!.id as string;
+
+      const res = await post(
+        "/api/submit-podcast",
+        { topic: "", parentPodcastId: otherParentId, sourceChapterTitle: "Only" },
+        authHeader(),
+      );
+      expect(res.status).toBe(404);
+
+      // Cleanup
+      await admin.auth.admin.deleteUser(otherUserId);
+    });
+
+    it("returns 400 when source chapter title doesn't match parent.chapter_markers", async () => {
+      await admin.from("subscriptions").update({ credits_remaining: 8 }).eq("user_id", userId);
+      const parentId = await seedParent();
+
+      const res = await post(
+        "/api/submit-podcast",
+        { topic: "", parentPodcastId: parentId, sourceChapterTitle: "DoesNotExist" },
+        authHeader(),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 409 with existing podcastId when same (parent, chapter) already expanded", async () => {
+      await admin.from("subscriptions").update({ credits_remaining: 8 }).eq("user_id", userId);
+      const parentId = await seedParent();
+
+      const firstRes = await post(
+        "/api/submit-podcast",
+        { topic: "", parentPodcastId: parentId, sourceChapterTitle: "Opening" },
+        authHeader(),
+      );
+      expect(firstRes.status).toBe(200);
+      const { podcastId: firstId } = (await firstRes.json()) as { podcastId: string };
+
+      const secondRes = await post(
+        "/api/submit-podcast",
+        { topic: "", parentPodcastId: parentId, sourceChapterTitle: "Opening" },
+        authHeader(),
+      );
+      expect(secondRes.status).toBe(409);
+      expect(((await secondRes.json()) as any).podcastId).toBe(firstId);
+    });
+
+    it("returns 400 when parent has no chapter_transcripts (legacy)", async () => {
+      await admin.from("subscriptions").update({ credits_remaining: 8 }).eq("user_id", userId);
+      const parentId = await seedParent({ chapter_transcripts: null });
+
+      const res = await post(
+        "/api/submit-podcast",
+        { topic: "", parentPodcastId: parentId, sourceChapterTitle: "Opening" },
+        authHeader(),
+      );
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as any).error).toMatch(/regenerate/);
+    });
+
+    it("flips profiles.has_used_expand to true on first expansion submit", async () => {
+      await admin.from("subscriptions").update({ credits_remaining: 8 }).eq("user_id", userId);
+      // Reset to false
+      await admin.from("profiles").update({ has_used_expand: false }).eq("id", userId);
+
+      const parentId = await seedParent();
+      const res = await post(
+        "/api/submit-podcast",
+        { topic: "", parentPodcastId: parentId, sourceChapterTitle: "Middle" },
+        authHeader(),
+      );
+      expect(res.status).toBe(200);
+
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("has_used_expand")
+        .eq("id", userId)
+        .single();
+      expect(profile?.has_used_expand).toBe(true);
+    });
+  });
+
   describe("POST /api/start-deep-dive + /api/end-deep-dive", () => {
     let sessionId: string;
 
