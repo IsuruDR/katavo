@@ -12,6 +12,7 @@ import { runPipeline } from "../podcast_pipeline/graph.js";
 import { handlePipelineFailure } from "../podcast_pipeline/nodes/errorHandler.js";
 import { getSupabaseClient } from "../podcast_pipeline/providers/supabaseClient.js";
 import type { PipelineStateType } from "../podcast_pipeline/state.js";
+import { fetchParentContext, buildResearchDigest } from "../lib/parentContext.js";
 
 export interface Job {
   podcastId: string;
@@ -126,19 +127,23 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const supabase = getSupabaseClient();
     const { data: stuckPodcasts, error } = await supabase
       .from("podcasts")
-      .select("id, user_id, topic, clarifying_answers, has_ads")
+      .select("id, user_id, topic, clarifying_answers, has_ads, voice, parent_podcast_id, source_chapter_title")
       .not("status", "in", '("complete","failed")');
 
     if (error || !stuckPodcasts || stuckPodcasts.length === 0) {
       return 0;
     }
 
-    // Look up tiers for all affected users
+    // Look up tiers + has_used_expand for all affected users
     const userIds = [...new Set(stuckPodcasts.map((p: { user_id: string }) => p.user_id))];
     const { data: subscriptions } = await supabase
       .from("subscriptions")
       .select("user_id, tier")
       .in("user_id", userIds);
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, has_used_expand")
+      .in("id", userIds);
 
     const tierByUser = new Map<string, string>();
     if (subscriptions) {
@@ -146,10 +151,54 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         tierByUser.set(sub.user_id, sub.tier);
       }
     }
+    const hasUsedExpandByUser = new Map<string, boolean>();
+    if (profiles) {
+      for (const p of profiles) {
+        hasUsedExpandByUser.set(p.id, p.has_used_expand ?? false);
+      }
+    }
 
     let recovered = 0;
     for (const podcast of stuckPodcasts) {
-      if (!jobs.has(podcast.id)) {
+      if (jobs.has(podcast.id)) continue;
+
+      const isExpansion = !!podcast.parent_podcast_id;
+
+      if (isExpansion) {
+        // Re-derive parent context the same way submitPodcast does.
+        // If the parent is gone or transcripts missing, skip — better to
+        // leave the row stuck than produce a generic podcast with a spent credit.
+        const parent = await fetchParentContext(supabase, podcast.parent_podcast_id, podcast.user_id);
+        if (!parent) {
+          console.warn(
+            `recoverStuckJobs: skipping expansion ${podcast.id} — parent context unavailable`,
+          );
+          continue;
+        }
+        const chapterTranscript = parent.chapter_transcripts?.[podcast.source_chapter_title];
+        if (!chapterTranscript) {
+          console.warn(
+            `recoverStuckJobs: skipping expansion ${podcast.id} — chapter transcript missing for "${podcast.source_chapter_title}"`,
+          );
+          continue;
+        }
+
+        enqueue(podcast.id, {
+          podcastId: podcast.id,
+          userId: podcast.user_id,
+          topic: parent.topic,
+          clarifyingAnswers: podcast.clarifying_answers ?? [],
+          hasAds: podcast.has_ads ?? false,
+          tier: tierByUser.get(podcast.user_id) ?? "free",
+          voice: podcast.voice ?? null,
+          parentPodcastId: podcast.parent_podcast_id,
+          sourceChapterTitle: podcast.source_chapter_title,
+          parentResearchDigest: buildResearchDigest(parent.research_document),
+          parentResearchDocument: parent.research_document,
+          parentChapterTranscript: chapterTranscript,
+          hasUsedExpand: hasUsedExpandByUser.get(podcast.user_id) ?? false,
+        });
+      } else {
         enqueue(podcast.id, {
           podcastId: podcast.id,
           userId: podcast.user_id,
@@ -157,9 +206,11 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
           clarifyingAnswers: podcast.clarifying_answers ?? [],
           hasAds: podcast.has_ads ?? false,
           tier: tierByUser.get(podcast.user_id) ?? "free",
+          voice: podcast.voice ?? null,
+          hasUsedExpand: hasUsedExpandByUser.get(podcast.user_id) ?? false,
         });
-        recovered++;
       }
+      recovered++;
     }
 
     return recovered;

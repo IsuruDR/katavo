@@ -238,8 +238,8 @@ describe("JobManager", () => {
             select: vi.fn().mockReturnValue({
               not: vi.fn().mockReturnValue({
                 data: [
-                  { id: "stuck-1", user_id: "u1", topic: "AI", clarifying_answers: [], has_ads: false },
-                  { id: "stuck-2", user_id: "u2", topic: "ML", clarifying_answers: [], has_ads: true },
+                  { id: "stuck-1", user_id: "u1", topic: "AI", clarifying_answers: [], has_ads: false, voice: null, parent_podcast_id: null, source_chapter_title: null },
+                  { id: "stuck-2", user_id: "u2", topic: "ML", clarifying_answers: [], has_ads: true, voice: null, parent_podcast_id: null, source_chapter_title: null },
                 ],
                 error: null,
               }),
@@ -259,6 +259,19 @@ describe("JobManager", () => {
             }),
           };
         }
+        if (table === "profiles") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({
+                data: [
+                  { id: "u1", has_used_expand: true },
+                  { id: "u2", has_used_expand: false },
+                ],
+                error: null,
+              }),
+            }),
+          };
+        }
         return { select: mockSelect };
       });
 
@@ -267,6 +280,7 @@ describe("JobManager", () => {
       expect(count).toBe(2);
       expect(mockFrom).toHaveBeenCalledWith("podcasts");
       expect(mockFrom).toHaveBeenCalledWith("subscriptions");
+      expect(mockFrom).toHaveBeenCalledWith("profiles");
       expect(jm.getJob("stuck-1")).toBeDefined();
       expect(jm.getJob("stuck-2")).toBeDefined();
     });
@@ -279,7 +293,7 @@ describe("JobManager", () => {
             select: vi.fn().mockReturnValue({
               not: vi.fn().mockReturnValue({
                 data: [
-                  { id: "stuck-1", user_id: "u1", topic: "AI", clarifying_answers: [], has_ads: false },
+                  { id: "stuck-1", user_id: "u1", topic: "AI", clarifying_answers: [], has_ads: false, voice: null, parent_podcast_id: null, source_chapter_title: null },
                 ],
                 error: null,
               }),
@@ -287,6 +301,16 @@ describe("JobManager", () => {
           };
         }
         if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({
+                data: [],
+                error: null,
+              }),
+            }),
+          };
+        }
+        if (table === "profiles") {
           return {
             select: vi.fn().mockReturnValue({
               in: vi.fn().mockReturnValue({
@@ -315,6 +339,13 @@ describe("JobManager", () => {
           };
         }
         if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({ data: [], error: null }),
+            }),
+          };
+        }
+        if (table === "profiles") {
           return {
             select: vi.fn().mockReturnValue({
               in: vi.fn().mockReturnValue({ data: [], error: null }),
