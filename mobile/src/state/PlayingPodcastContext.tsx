@@ -13,6 +13,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -52,7 +53,11 @@ export function PlayingPodcastProvider({ children }: { children: ReactNode }) {
     async (podcast: PlayingPodcast) => {
       if (currentRef.current?.id === podcast.id) {
         // Already loaded; keep playing position, ignore the call.
-        if (!ready) setReady(true);
+        // setReady(true) is idempotent — calling it when ready is already
+        // true is a no-op for React, so we don't need `ready` in deps
+        // (which would re-create this callback on every ready flip and
+        // cascade re-fires into every consumer with `[load]` deps).
+        setReady(true);
         return;
       }
       setReady(false);
@@ -68,7 +73,7 @@ export function PlayingPodcastProvider({ children }: { children: ReactNode }) {
       }
       setReady(true);
     },
-    [ready, setCurrent],
+    [setCurrent],
   );
 
   const clear = useCallback(async () => {
@@ -77,11 +82,19 @@ export function PlayingPodcastProvider({ children }: { children: ReactNode }) {
     await TrackPlayer.reset();
   }, [setCurrent]);
 
-  return (
-    <Context.Provider value={{ current, ready, load, clear }}>
-      {children}
-    </Context.Provider>
+  // Memoized so a re-render that doesn't actually change current/ready/load
+  // doesn't break referential equality for consumers. Without this, every
+  // re-render of the provider hands out a fresh value object, which
+  // re-fires every useEffect that depends on context fields and triggers
+  // a re-render loop when two player screens are stacked (parent under
+  // expansion). Each one calls `load(theirPodcast)` whenever load identity
+  // changes, clobbering currentRef in a tight loop.
+  const value = useMemo(
+    () => ({ current, ready, load, clear }),
+    [current, ready, load, clear],
   );
+
+  return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
 export function usePlayingPodcast() {
