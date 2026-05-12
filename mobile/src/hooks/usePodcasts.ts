@@ -20,6 +20,9 @@ export interface PodcastRow {
   created_at: string;
   error_message: string | null;
   status_started_at: string | null;
+  parent_podcast_id: string | null;
+  source_chapter_title: string | null;
+  parent: { topic: string } | null;
 }
 
 /** App-level type — camelCase to match TypeScript pipeline conventions */
@@ -35,6 +38,9 @@ export interface Podcast {
   createdAt: string;
   errorMessage: string | null;
   statusStartedAt: string | null;
+  parentPodcastId: string | null;
+  sourceChapterTitle: string | null;
+  parentTopic: string | null;
 }
 
 export function toPodcast(row: PodcastRow): Podcast {
@@ -53,6 +59,9 @@ export function toPodcast(row: PodcastRow): Podcast {
     createdAt: row.created_at,
     errorMessage: row.error_message,
     statusStartedAt: row.status_started_at ?? row.created_at,
+    parentPodcastId: row.parent_podcast_id,
+    sourceChapterTitle: row.source_chapter_title,
+    parentTopic: row.parent?.topic ?? null,
   };
 }
 
@@ -74,7 +83,12 @@ export function usePodcasts() {
     try {
       const { data, error } = await supabase
         .from("podcasts")
-        .select("*")
+        .select(`
+          id, topic, status, audio_url, cover_url, duration_seconds, chapter_markers,
+          has_ads, created_at, error_message, status_started_at,
+          parent_podcast_id, source_chapter_title,
+          parent:parent_podcast_id (topic)
+        `)
         .eq("user_id", user.id)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
@@ -106,9 +120,14 @@ export function usePodcasts() {
         },
         (payload) => {
           setPodcasts((prev) =>
-            prev.map((p) =>
-              p.id === payload.new.id ? toPodcast(payload.new as PodcastRow) : p
-            )
+            prev.map((p) => {
+              if (p.id !== payload.new.id) return p;
+              const updated = toPodcast(payload.new as PodcastRow);
+              // Realtime payloads don't include joined relations; preserve the
+              // resolved parentTopic from our last fetch so the subtitle doesn't
+              // flicker to null on status updates.
+              return { ...updated, parentTopic: p.parentTopic ?? updated.parentTopic };
+            })
           );
         }
       )

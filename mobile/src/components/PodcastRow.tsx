@@ -310,6 +310,13 @@ export function PodcastRow({
               <Text style={styles.topic} numberOfLines={2}>
                 {podcast.topic}
               </Text>
+              {podcast.parentPodcastId && podcast.sourceChapterTitle && (
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {podcast.parentTopic
+                    ? `from "${podcast.parentTopic}" · chapter ${podcast.sourceChapterTitle}`
+                    : `from a deleted podcast · chapter ${podcast.sourceChapterTitle}`}
+                </Text>
+              )}
               <Text style={metadataStyle}>{metadataParts.join(" · ")}</Text>
             </View>
           </View>
@@ -370,6 +377,12 @@ const styles = StyleSheet.create({
   },
   topic: {
     ...text.titleSerif,
+  },
+  subtitle: {
+    ...text.bodySmall,
+    color: color.inkSecondary,
+    fontSize: 12,
+    marginTop: space.xxs,
   },
   metadata: {
     ...text.bodySmall,
