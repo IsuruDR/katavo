@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "../../src/lib/supabase";
 import { usePlayer } from "../../src/hooks/usePlayer";
 import { useSubscription } from "../../src/hooks/useSubscription";
@@ -61,20 +61,27 @@ export default function PlayerScreen() {
     })();
   }, [id]);
 
-  // Hand the podcast to the global context once we have it. If it's already
-  // the loaded track (e.g. user came in from the mini-player), context.load
-  // is a no-op and playback position is preserved.
-  useEffect(() => {
-    if (!podcast?.audioUrl) return;
-    load({
-      id: podcast.id,
-      topic: podcast.topic,
-      audioUrl: podcast.audioUrl,
-      coverUrl: podcast.coverUrl,
-      durationSeconds: podcast.durationSeconds,
-      chapterMarkers: podcast.chapterMarkers ?? [],
-    });
-  }, [podcast?.id, podcast?.audioUrl, load]);
+  // Reclaim the global track on every focus, not just on mount. When the
+  // user pushes to an expansion and then back, this screen's mount-side
+  // effect doesn't re-fire (deps haven't changed), but the context's
+  // `current` is now the expansion — leaving us stuck on the
+  // "Preparing audio" gate. useFocusEffect runs the claim on initial mount
+  // AND every back-navigation, so the parent reclaims itself naturally.
+  // `load` short-circuits when currentRef already matches, so re-focusing
+  // while still loaded is a cheap setReady(true).
+  useFocusEffect(
+    useCallback(() => {
+      if (!podcast?.audioUrl) return;
+      load({
+        id: podcast.id,
+        topic: podcast.topic,
+        audioUrl: podcast.audioUrl,
+        coverUrl: podcast.coverUrl,
+        durationSeconds: podcast.durationSeconds,
+        chapterMarkers: podcast.chapterMarkers ?? [],
+      });
+    }, [podcast, load]),
+  );
 
   const handleExpandTapped = (chapterTitle: string) => {
     setPendingChapter(chapterTitle);
@@ -153,6 +160,21 @@ export default function PlayerScreen() {
     return chapters[idx] ?? null;
   }, [chapters, player.progress.position]);
 
+  // Sticky flag: true once the user has played near the end of the
+  // podcast. Drives whether ChapterMarkers exposes the Expand affordance
+  // — before this point, showing it is just paywall noise because the
+  // user hasn't committed to the content yet. Stays true if they scrub
+  // back to listen again. Resets only on screen unmount (next visit
+  // re-establishes once playback re-enters the tail).
+  const [hasReachedEnd, setHasReachedEnd] = useState(false);
+  useEffect(() => {
+    if (hasReachedEnd) return;
+    const { position, duration } = player.progress;
+    if (duration > 0 && position >= duration * 0.95) {
+      setHasReachedEnd(true);
+    }
+  }, [player.progress, hasReachedEnd]);
+
   // Deep Dive UI sunset — feature replaced by chapter expansions (v15-v17).
   // Component file + route + hook + ElevenLabs deps all preserved in the
   // codebase for future revival. To re-enable: flip this to `true`. See spec at
@@ -230,6 +252,7 @@ export default function PlayerScreen() {
               parentPodcastId={String(id)}
               onExpandTapped={handleExpandTapped}
               onOpenExpansion={handleOpenExpansion}
+              endReached={hasReachedEnd}
             />
           )}
         </ScrollView>
