@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
 import { RESEARCH_MAX_TOKENS, RESEARCH_MODELS, RESEARCH_TEMPERATURES } from "../../config.js";
-import { SYNTHESIZER_PROMPT } from "./prompts.js";
+import { SYNTHESIZER_PROMPT, SYNTHESIZER_PARENT_PRIORS } from "./prompts.js";
 import type { SubagentFindings } from "./subagent.js";
 
 export const ResearchDocumentSchema = z.object({
@@ -17,6 +17,11 @@ export async function runSynthesizer(
   usable: SubagentFindings[],
   droppedQuestions: string[],
   config?: RunnableConfig,
+  expansion?: {
+    parentTopic: string;
+    sourceChapterTitle: string;
+    parentResearchDocument: Record<string, unknown>;
+  },
 ): Promise<ResearchDocument> {
   const llm = makeOpenRouterModel(RESEARCH_MODELS.reasoning, {
     temperature: RESEARCH_TEMPERATURES.synthesizer,
@@ -24,8 +29,15 @@ export async function runSynthesizer(
   });
   const structured = llm.withStructuredOutput(ResearchDocumentSchema, { name: "research_document" });
 
+  const parentPriors = expansion
+    ? SYNTHESIZER_PARENT_PRIORS
+        .replace("{parentTopic}", expansion.parentTopic)
+        .replace("{sourceChapterTitle}", expansion.sourceChapterTitle)
+        .replace("{parentResearchDocument}", JSON.stringify(expansion.parentResearchDocument, null, 2))
+    : "";
+
   const payload = JSON.stringify({ subagentFindings: usable, droppedQuestions }, null, 2);
-  const prompt = `${SYNTHESIZER_PROMPT}\n\nInput payload:\n${payload}`;
+  const prompt = `${SYNTHESIZER_PROMPT.replace("{parentPriors}", parentPriors)}\n\nInput payload:\n${payload}`;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {

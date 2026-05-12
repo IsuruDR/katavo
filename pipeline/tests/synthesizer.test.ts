@@ -68,3 +68,44 @@ describe("runSynthesizer", () => {
     await expect(runSynthesizer([findings("task_0", [])], [])).rejects.toThrow(/e2/);
   });
 });
+
+describe("runSynthesizer expansion priors", () => {
+  it("injects parent research as priors when expansion provided", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      sections: [],
+      sources: [],
+      claims: [],
+      droppedQuestions: [],
+    });
+    const { runSynthesizer } = await import("../src/podcast_pipeline/nodes/research/synthesizer.js");
+    await runSynthesizer(
+      [findings("task_0", [])],
+      [],
+      undefined,
+      {
+        parentTopic: "T",
+        sourceChapterTitle: "C",
+        parentResearchDocument: { sections: [{ title: "S1", content: "C1" }] },
+      },
+    );
+    const callArg = mockInvoke.mock.calls[0][0];
+    const text = typeof callArg === "string" ? callArg : JSON.stringify(callArg);
+    expect(text).toContain("LAYER ON TOP");
+    expect(text).toContain("Source chapter title: C");
+    expect(text).toContain("S1");
+  });
+
+  it("omits parent priors when no expansion provided", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      sections: [],
+      sources: [],
+      claims: [],
+      droppedQuestions: [],
+    });
+    const { runSynthesizer } = await import("../src/podcast_pipeline/nodes/research/synthesizer.js");
+    await runSynthesizer([findings("task_0", [])], []);
+    const callArg = mockInvoke.mock.calls[0][0];
+    const text = typeof callArg === "string" ? callArg : JSON.stringify(callArg);
+    expect(text).not.toContain("LAYER ON TOP");
+  });
+});

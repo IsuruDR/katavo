@@ -18,8 +18,19 @@ Don't research yourself; this is decomposition only.
 
 {retryContext}
 
+{parentContext}
+
 Brief:
 {researchBrief}
+`;
+
+export const PLANNER_PARENT_CONTEXT = `IMPORTANT CONTEXT: this is a continuation episode that deepens a parent podcast's chapter. The parent already covered the following topology of material — your sub-questions should DRILL DEEPER, not duplicate. Do not propose questions that just re-cover what the parent already established.
+
+Parent topic: {parentTopic}
+Source chapter title: {sourceChapterTitle}
+
+Parent research digest (already-covered topology):
+{parentResearchDigest}
 `;
 
 export const PLANNER_RETRY_CONTEXT = `
@@ -58,7 +69,18 @@ Context: {context}
 Suggested starting queries: {searchHints}
 `;
 
+export const SYNTHESIZER_PARENT_PRIORS = `IMPORTANT: this is a continuation episode. Your research_document should LAYER ON TOP of the parent's coverage, not replicate it. The listener already heard the parent — your job is to add depth, not re-establish basics.
+
+Parent topic: {parentTopic}
+Source chapter title: {sourceChapterTitle}
+
+Parent research (DO NOT REPRODUCE — extend or contextualize instead):
+{parentResearchDocument}
+`;
+
 export const SYNTHESIZER_PROMPT = `You are merging research findings from N parallel subagents into a single research document for a podcast.
+
+{parentPriors}
 
 Inputs:
 - subagentFindings: an array of { taskId, question, findings: [{ claim, sourceUrls, sourceTitles }], status, notes }

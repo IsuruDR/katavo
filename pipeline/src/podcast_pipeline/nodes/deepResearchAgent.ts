@@ -34,6 +34,13 @@ export async function deepResearchAgent(
         credibilityReport: state.credibilityReport,
         droppedQuestions:
           (state.researchDocument as ResearchDocument | undefined)?.droppedQuestions ?? [],
+        expansion: state.parentPodcastId
+          ? {
+              parentTopic: state.topic,
+              sourceChapterTitle: state.sourceChapterTitle ?? "",
+              parentResearchDigest: state.parentResearchDigest ?? "",
+            }
+          : undefined,
       },
       config,
     );
@@ -68,7 +75,18 @@ export async function deepResearchAgent(
 
   let researchDocument: ResearchDocument;
   try {
-    researchDocument = await runSynthesizer(usable as SubagentFindings[], dropped, config);
+    researchDocument = await runSynthesizer(
+      usable as SubagentFindings[],
+      dropped,
+      config,
+      state.parentPodcastId
+        ? {
+            parentTopic: state.topic,
+            sourceChapterTitle: state.sourceChapterTitle ?? "",
+            parentResearchDocument: state.parentResearchDocument ?? {},
+          }
+        : undefined,
+    );
   } catch (err: any) {
     console.error("[deepResearchAgent.synthesizer] hard failure:", {
       error: err?.message ?? String(err),

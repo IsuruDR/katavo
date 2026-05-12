@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { makeOpenRouterModel } from "../../providers/openrouter.js";
 import { RESEARCH_MAX_TOKENS, RESEARCH_MODELS, RESEARCH_TEMPERATURES } from "../../config.js";
-import { PLANNER_PROMPT, PLANNER_RETRY_CONTEXT } from "./prompts.js";
+import { PLANNER_PROMPT, PLANNER_RETRY_CONTEXT, PLANNER_PARENT_CONTEXT } from "./prompts.js";
 
 export const SubagentTaskSchema = z.object({
   id: z.string(),
@@ -20,6 +20,11 @@ export interface PlannerInput {
   researchIterations: number;
   credibilityReport?: string;
   droppedQuestions?: string[];
+  expansion?: {
+    parentTopic: string;
+    sourceChapterTitle: string;
+    parentResearchDigest: string;
+  };
 }
 
 /** Strip optional ```json fences before JSON.parse — some models wrap output in markdown. */
@@ -50,10 +55,17 @@ export async function runPlanner(
         )
       : "";
 
-  const prompt = PLANNER_PROMPT.replace("{retryContext}", retryContext).replace(
-    "{researchBrief}",
-    researchBrief,
-  );
+  const parentContext = ctx.expansion
+    ? PLANNER_PARENT_CONTEXT
+        .replace("{parentTopic}", ctx.expansion.parentTopic)
+        .replace("{sourceChapterTitle}", ctx.expansion.sourceChapterTitle)
+        .replace("{parentResearchDigest}", ctx.expansion.parentResearchDigest)
+    : "";
+
+  const prompt = PLANNER_PROMPT
+    .replace("{retryContext}", retryContext)
+    .replace("{parentContext}", parentContext)
+    .replace("{researchBrief}", researchBrief);
 
   const llm = makeOpenRouterModel(RESEARCH_MODELS.reasoning, {
     temperature: RESEARCH_TEMPERATURES.planner,

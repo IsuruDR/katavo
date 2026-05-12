@@ -66,4 +66,45 @@ describe("planner", () => {
     const brief = JSON.stringify({ scope: "S", angle: "A", depth: "intermediate", keyQuestions: ["Q1?", "Q2?"] });
     await expect(runPlanner(brief, { researchIterations: 0 })).rejects.toThrow(/at least 3 keyQuestions/);
   });
+
+  it("includes parent context block when expansion provided", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      tasks: [
+        { id: "task_0", question: "Q1?", context: "C", searchHints: ["h"] },
+        { id: "task_1", question: "Q2?", context: "C", searchHints: ["h"] },
+        { id: "task_2", question: "Q3?", context: "C", searchHints: ["h"] },
+      ],
+    });
+    const { runPlanner } = await import("../src/podcast_pipeline/nodes/research/planner.js");
+    const brief = JSON.stringify({ scope: "S", angle: "A", depth: "intermediate", keyQuestions: ["Q1?", "Q2?", "Q3?"] });
+    await runPlanner(brief, {
+      researchIterations: 0,
+      expansion: {
+        parentTopic: "AI environmental impact",
+        sourceChapterTitle: "Data center energy",
+        parentResearchDigest: "Section A: covered.",
+      },
+    });
+    const callArg = mockInvoke.mock.calls[0][0];
+    const text = typeof callArg === "string" ? callArg : JSON.stringify(callArg);
+    expect(text).toContain("continuation episode");
+    expect(text).toContain("AI environmental impact");
+    expect(text).toContain("Section A: covered");
+  });
+
+  it("omits parent context block when no expansion provided", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      tasks: [
+        { id: "task_0", question: "Q1?", context: "C", searchHints: ["h"] },
+        { id: "task_1", question: "Q2?", context: "C", searchHints: ["h"] },
+        { id: "task_2", question: "Q3?", context: "C", searchHints: ["h"] },
+      ],
+    });
+    const { runPlanner } = await import("../src/podcast_pipeline/nodes/research/planner.js");
+    const brief = JSON.stringify({ scope: "S", angle: "A", depth: "intermediate", keyQuestions: ["Q1?", "Q2?", "Q3?"] });
+    await runPlanner(brief, { researchIterations: 0 });
+    const callArg = mockInvoke.mock.calls[0][0];
+    const text = typeof callArg === "string" ? callArg : JSON.stringify(callArg);
+    expect(text).not.toContain("continuation episode");
+  });
 });
