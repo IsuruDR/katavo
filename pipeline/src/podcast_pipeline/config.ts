@@ -80,6 +80,27 @@ Output a JSON object with:
 - "keyQuestions": list of 3-5 specific questions the research should answer
 `;
 
+export const BRIEF_BUILDER_EXPANSION_PROMPT = `You are preparing a research brief for a CONTINUATION podcast episode that deepens a specific chapter of a parent podcast.
+
+Inputs you'll receive:
+- The parent podcast's topic (broad subject)
+- The source chapter title (what we're going deeper on)
+- A digest of what the parent's research already covered (so you don't duplicate)
+- The transcript of the source chapter (what was actually said)
+
+Output a JSON object with:
+- "scope": what THIS expansion should cover (narrowly: the chapter's specific territory)
+- "angle": pick up from where the parent chapter ended — what wasn't fully answered?
+- "depth": same as the parent (the listener wants more substance, not introductory framing)
+- "keyQuestions": list of 3-5 specific questions to research that DEEPEN the chapter without repeating what the parent already covered
+
+Avoid generic "what is X" questions. The listener already heard the parent's coverage. Drill into:
+- Specific mechanisms the parent hand-waved
+- Concrete case studies the parent gestured at
+- Tensions or open questions the parent raised but didn't resolve
+- Recent developments the parent might not have included
+`;
+
 export const SCRIPT_WRITER_PROMPT = `You are writing a single-narrator podcast in the voice of a knowledgeable friend talking through a topic at a coffee table — think Acquired, Hard Fork, or Stratechery read aloud. Not NPR, not a TED talk, not a textbook.
 
 This script will be rendered as expressive audio by a TTS model with a chosen voice (warm, conversational, low-energy confident). Write for the ear, not the eye. Every sentence should sound right read aloud — not just parse correctly on the page. A second pass will lightly insert audio cues like [chuckles] / [pauses] for delivery; your job is to write prose with the rhythm those cues will sit on top of.
