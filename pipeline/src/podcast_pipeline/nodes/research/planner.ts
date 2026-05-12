@@ -72,10 +72,23 @@ export async function runPlanner(
     maxTokens: RESEARCH_MAX_TOKENS.planner,
   });
   const structured = llm.withStructuredOutput(PlannerOutputSchema, { name: "planner_output" });
-  const result = await structured.invoke(prompt, config);
 
-  if (result.tasks.length !== keyQuestions.length) {
-    throw new Error(`Planner returned ${result.tasks.length} tasks, expected ${keyQuestions.length}`);
+  // The planner LLM occasionally returns N±k tasks for N keyQuestions (LLM
+  // jitter, not a deterministic bug). One retry recovers ~all such cases
+  // without changing the strict invariant downstream code relies on.
+  let result: z.infer<typeof PlannerOutputSchema>;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    result = await structured.invoke(prompt, config);
+    if (result.tasks.length === keyQuestions.length) break;
+    if (attempt === 2) {
+      throw new Error(
+        `Planner returned ${result.tasks.length} tasks, expected ${keyQuestions.length}`,
+      );
+    }
+    console.warn(
+      `[planner] count mismatch on attempt ${attempt}: got ${result.tasks.length}, expected ${keyQuestions.length}; retrying`,
+    );
   }
-  return result.tasks;
+  // result is guaranteed assigned by the loop above
+  return result!.tasks;
 }

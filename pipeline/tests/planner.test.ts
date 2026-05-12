@@ -31,13 +31,47 @@ describe("planner", () => {
     expect(tasks[2].question).toBe("Q3?");
   });
 
-  it("throws when planner returns wrong number of tasks", async () => {
-    mockInvoke.mockResolvedValueOnce({
-      tasks: [{ id: "task_0", question: "Q1?", context: "C", searchHints: [] }],
-    });
+  it("throws when both attempts return wrong task count", async () => {
+    mockInvoke
+      .mockResolvedValueOnce({
+        tasks: [{ id: "task_0", question: "Q1?", context: "C", searchHints: [] }],
+      })
+      .mockResolvedValueOnce({
+        tasks: [
+          { id: "task_0", question: "Q1?", context: "C", searchHints: [] },
+          { id: "task_1", question: "Q2?", context: "C", searchHints: [] },
+        ],
+      });
     const { runPlanner } = await import("../src/podcast_pipeline/nodes/research/planner.js");
     const brief = JSON.stringify({ scope: "S", angle: "A", depth: "intermediate", keyQuestions: ["Q1?", "Q2?", "Q3?"] });
     await expect(runPlanner(brief, { researchIterations: 0 })).rejects.toThrow(/expected 3/);
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries once and succeeds when planner first returns wrong count", async () => {
+    mockInvoke
+      .mockResolvedValueOnce({
+        // First attempt: LLM hallucinated an extra task (4 vs 3 expected)
+        tasks: [
+          { id: "task_0", question: "Q1?", context: "C", searchHints: ["h"] },
+          { id: "task_1", question: "Q2?", context: "C", searchHints: ["h"] },
+          { id: "task_2", question: "Q3?", context: "C", searchHints: ["h"] },
+          { id: "task_3", question: "extra hallucinated", context: "C", searchHints: ["h"] },
+        ],
+      })
+      .mockResolvedValueOnce({
+        // Second attempt: correct
+        tasks: [
+          { id: "task_0", question: "Q1?", context: "C", searchHints: ["h"] },
+          { id: "task_1", question: "Q2?", context: "C", searchHints: ["h"] },
+          { id: "task_2", question: "Q3?", context: "C", searchHints: ["h"] },
+        ],
+      });
+    const { runPlanner } = await import("../src/podcast_pipeline/nodes/research/planner.js");
+    const brief = JSON.stringify({ scope: "S", angle: "A", depth: "intermediate", keyQuestions: ["Q1?", "Q2?", "Q3?"] });
+    const tasks = await runPlanner(brief, { researchIterations: 0 });
+    expect(tasks).toHaveLength(3);
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
   });
 
   it("injects retry context when researchIterations > 0", async () => {
