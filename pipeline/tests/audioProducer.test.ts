@@ -346,3 +346,85 @@ describe("stitchAudio chunk WPM validation", () => {
     warnSpy.mockRestore();
   });
 });
+
+describe("stitchAudio coach-mark appendage", () => {
+  it("appends coach-mark file when options.coachmarkVoice is set", async () => {
+    execSyncMock.mockReset();
+    execSyncMock.mockReturnValueOnce(Buffer.from("")); // main concat ffmpeg
+    execSyncMock.mockReturnValueOnce("5.0"); // main ffprobe duration
+
+    const fs = await import("node:fs");
+    const readSpy = vi.spyOn(fs, "readFileSync").mockImplementation((path: any) => {
+      const p = String(path);
+      if (p.includes("coachmark_expand_")) return Buffer.from("coachmark-bytes") as any;
+      if (p.endsWith("output.mp3")) return Buffer.from("fake-concat-output") as any;
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+    const writeSpy = vi.spyOn(fs, "writeFileSync");
+
+    const synthesize = vi.fn().mockResolvedValue(Buffer.from("fake-audio"));
+    const tts: TTSProvider = { synthesize };
+    const segments = [{ type: "text" as const, content: "hello world" }];
+
+    await stitchAudio(segments, tts, "Sulafat", { coachmarkVoice: "Sulafat" });
+
+    // The concat list file content should reference the coach-mark path.
+    const writeCalls = writeSpy.mock.calls;
+    const listWrite = writeCalls.find((c) =>
+      typeof c[1] === "string" && String(c[1]).includes("coachmark_expand_Sulafat"),
+    );
+    expect(listWrite).toBeDefined();
+
+    readSpy.mockRestore();
+    writeSpy.mockRestore();
+  });
+
+  it("does NOT append coach-mark when options.coachmarkVoice is null", async () => {
+    execSyncMock.mockReset();
+    execSyncMock.mockReturnValueOnce(Buffer.from("")); // main concat ffmpeg
+    execSyncMock.mockReturnValueOnce("5.0"); // main ffprobe duration
+
+    const fs = await import("node:fs");
+    const writeSpy = vi.spyOn(fs, "writeFileSync");
+
+    const synthesize = vi.fn().mockResolvedValue(Buffer.from("fake-audio"));
+    const tts: TTSProvider = { synthesize };
+    const segments = [{ type: "text" as const, content: "hello world" }];
+
+    await stitchAudio(segments, tts, "Sulafat", { coachmarkVoice: null });
+
+    const writeCalls = writeSpy.mock.calls;
+    const listWrite = writeCalls.find((c) =>
+      typeof c[1] === "string" && String(c[1]).includes("coachmark_expand_"),
+    );
+    expect(listWrite).toBeUndefined();
+
+    writeSpy.mockRestore();
+  });
+
+  it("silently skips coach-mark if the file is missing", async () => {
+    execSyncMock.mockReset();
+    execSyncMock.mockReturnValueOnce(Buffer.from("")); // main concat ffmpeg
+    execSyncMock.mockReturnValueOnce("5.0"); // main ffprobe duration
+
+    const fs = await import("node:fs");
+    // No mock override — readFileSync from the module-level mock throws ENOENT for coach-mark paths
+    const writeSpy = vi.spyOn(fs, "writeFileSync");
+
+    const synthesize = vi.fn().mockResolvedValue(Buffer.from("fake-audio"));
+    const tts: TTSProvider = { synthesize };
+    const segments = [{ type: "text" as const, content: "hello world" }];
+
+    // Should not throw despite missing coach-mark
+    await stitchAudio(segments, tts, "Sulafat", { coachmarkVoice: "Sulafat" });
+
+    // List file should NOT reference coach-mark
+    const writeCalls = writeSpy.mock.calls;
+    const listWrite = writeCalls.find((c) =>
+      typeof c[1] === "string" && String(c[1]).includes("coachmark_expand_"),
+    );
+    expect(listWrite).toBeUndefined();
+
+    writeSpy.mockRestore();
+  });
+});

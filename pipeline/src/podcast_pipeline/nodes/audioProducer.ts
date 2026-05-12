@@ -38,6 +38,7 @@ import { persistStatus } from "./persistStatus.js";
 import type { PipelineStateType } from "../state.js";
 
 const AD_AUDIO_DIR = process.env.AD_AUDIO_DIR ?? "ad_assets";
+const COACHMARK_AUDIO_DIR = process.env.COACHMARK_AUDIO_DIR ?? "coachmark_audio";
 
 interface ScriptSegment {
   type: "text" | "ad";
@@ -280,6 +281,7 @@ export async function stitchAudio(
   segments: ScriptSegment[],
   tts: TTSProvider,
   voice?: string | null,
+  options?: { coachmarkVoice?: string | null },
 ): Promise<{ audioBytes: Buffer; durationSeconds: number }> {
   const tempDir = mkdtempSync(join(tmpdir(), "podcast-audio-"));
 
@@ -332,6 +334,26 @@ export async function stitchAudio(
       }
     }
 
+    // Coach-mark append: only when caller (audioProducer) decided this is
+    // a parent on first-time generation. Sits OUTSIDE the WPM-validated
+    // chunk path because it's a static asset (no retry, no sub-split).
+    // Encoding matches the live-chunk encoding (libmp3lame qscale=2,
+    // 24kHz mono) so the final concat re-encode produces a clean join.
+    if (options?.coachmarkVoice && partFiles.length > 0) {
+      const coachmarkPath = join(
+        COACHMARK_AUDIO_DIR,
+        `coachmark_expand_${options.coachmarkVoice}.mp3`,
+      );
+      try {
+        readFileSync(coachmarkPath);
+        partFiles.push(coachmarkPath);
+      } catch {
+        console.warn(
+          `[audioProducer] coach-mark missing for voice ${options.coachmarkVoice}, skipping`,
+        );
+      }
+    }
+
     if (partFiles.length === 0) {
       return { audioBytes: Buffer.alloc(0), durationSeconds: 0 };
     }
@@ -376,7 +398,11 @@ export async function audioProducer(
 
   const tts = getTtsProvider();
   const segments = splitScriptSegments(sourceScript);
-  const { audioBytes, durationSeconds } = await stitchAudio(segments, tts, state.voice);
+  const showCoachMark = !state.parentPodcastId && !state.hasUsedExpand;
+  const coachmarkVoice = showCoachMark ? (state.voice ?? "Sulafat") : null;
+  const { audioBytes, durationSeconds } = await stitchAudio(segments, tts, state.voice, {
+    coachmarkVoice,
+  });
 
   const supabase = getSupabaseClient();
   const storagePath = `${userId}/${podcastId}.mp3`;
