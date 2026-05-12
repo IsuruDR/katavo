@@ -55,15 +55,19 @@ export type Database = {
           audio_url: string | null
           chapter_markers: Json | null
           chapter_research_map: Json | null
+          chapter_transcripts: Json | null
           clarifying_answers: Json | null
           cover_url: string | null
           created_at: string
           deleted_at: string | null
           duration_seconds: number | null
           error_message: string | null
+          expansion_prompt_sent_at: string | null
           has_ads: boolean
           id: string
           langgraph_run_id: string | null
+          parent_podcast_id: string | null
+          source_chapter_title: string | null
           status: Database["public"]["Enums"]["podcast_status"]
           status_history: Json
           status_started_at: string
@@ -76,15 +80,19 @@ export type Database = {
           audio_url?: string | null
           chapter_markers?: Json | null
           chapter_research_map?: Json | null
+          chapter_transcripts?: Json | null
           clarifying_answers?: Json | null
           cover_url?: string | null
           created_at?: string
           deleted_at?: string | null
           duration_seconds?: number | null
           error_message?: string | null
+          expansion_prompt_sent_at?: string | null
           has_ads?: boolean
           id?: string
           langgraph_run_id?: string | null
+          parent_podcast_id?: string | null
+          source_chapter_title?: string | null
           status?: Database["public"]["Enums"]["podcast_status"]
           status_history?: Json
           status_started_at?: string
@@ -97,15 +105,19 @@ export type Database = {
           audio_url?: string | null
           chapter_markers?: Json | null
           chapter_research_map?: Json | null
+          chapter_transcripts?: Json | null
           clarifying_answers?: Json | null
           cover_url?: string | null
           created_at?: string
           deleted_at?: string | null
           duration_seconds?: number | null
           error_message?: string | null
+          expansion_prompt_sent_at?: string | null
           has_ads?: boolean
           id?: string
           langgraph_run_id?: string | null
+          parent_podcast_id?: string | null
+          source_chapter_title?: string | null
           status?: Database["public"]["Enums"]["podcast_status"]
           status_history?: Json
           status_started_at?: string
@@ -121,6 +133,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           expo_push_token: string | null
+          has_used_expand: boolean
           id: string
           notification_preferences: Json | null
           onboarding_complete: boolean
@@ -131,6 +144,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           expo_push_token?: string | null
+          has_used_expand?: boolean
           id: string
           notification_preferences?: Json | null
           onboarding_complete?: boolean
@@ -141,11 +155,39 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           expo_push_token?: string | null
+          has_used_expand?: boolean
           id?: string
           notification_preferences?: Json | null
           onboarding_complete?: boolean
           preferred_voice?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      playback_events: {
+        Row: {
+          created_at: string
+          event_type: "skip_back" | "skip_forward"
+          id: string
+          podcast_id: string
+          timestamp_seconds: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: "skip_back" | "skip_forward"
+          id?: string
+          podcast_id: string
+          timestamp_seconds: number
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: "skip_back" | "skip_forward"
+          id?: string
+          podcast_id?: string
+          timestamp_seconds?: number
+          user_id?: string
         }
         Relationships: []
       }
