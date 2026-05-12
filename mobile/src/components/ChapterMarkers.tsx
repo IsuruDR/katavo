@@ -87,9 +87,8 @@ export function ChapterMarkers({
                     <Pressable
                       onPress={() => onExpandTapped(item.title)}
                       hitSlop={layout.hitSlop}
-                      style={styles.expandPill}
                     >
-                      <Text style={styles.expandPillLabel}>Expand</Text>
+                      <Text style={styles.expandLink}>Expand ›</Text>
                     </Pressable>
                   );
                 }
@@ -99,18 +98,23 @@ export function ChapterMarkers({
                       onPress={() => onOpenExpansion(entry.podcastId)}
                       hitSlop={layout.hitSlop}
                     >
-                      <Text style={styles.openExpansionLink}>Open expansion ›</Text>
+                      <Text style={styles.openExpansionLink}>
+                        Open expansion ›
+                      </Text>
                     </Pressable>
                   );
                 }
                 if (entry.status === "failed") {
                   return (
-                    <Pressable
-                      onPress={() => onExpandTapped(item.title)}
-                      hitSlop={layout.hitSlop}
-                    >
-                      <Text style={styles.tryAgainLink}>Try again</Text>
-                    </Pressable>
+                    <View style={styles.failedBlock}>
+                      <Text style={styles.failedNote}>Generation failed.</Text>
+                      <Pressable
+                        onPress={() => onExpandTapped(item.title)}
+                        hitSlop={layout.hitSlop}
+                      >
+                        <Text style={styles.tryAgainLink}>Try again</Text>
+                      </Pressable>
+                    </View>
                   );
                 }
                 // queued / researching / scripting / generating_audio / fact_checking
@@ -171,26 +175,29 @@ const styles = StyleSheet.create({
     color: color.accent,
     marginTop: space.xxs,
   },
-  expandPill: {
-    borderWidth: 1,
-    borderColor: color.accent,
-    borderRadius: 999,
-    paddingHorizontal: space.sm,
-    paddingVertical: space.xxs,
-    alignSelf: "flex-start",
-  },
-  expandPillLabel: {
+  expandLink: {
     fontFamily: font.sansSemiBold,
-    fontSize: 12,
+    fontSize: 13,
     color: color.accent,
+    marginTop: space.xxs,
   },
   openExpansionLink: {
     fontFamily: font.sansMedium,
     fontSize: 13,
     color: color.inkSecondary,
+    marginTop: space.xxs,
+  },
+  failedBlock: {
+    marginTop: space.xxs,
+    gap: 2,
+  },
+  failedNote: {
+    fontFamily: font.sansMedium,
+    fontSize: 12,
+    color: color.inkSecondary,
   },
   tryAgainLink: {
-    fontFamily: font.sansMedium,
+    fontFamily: font.sansSemiBold,
     fontSize: 13,
     color: color.warning,
   },

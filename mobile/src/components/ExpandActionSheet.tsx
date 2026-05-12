@@ -1,14 +1,19 @@
 /**
- * Bottom sheet shown when user taps Expand on a chapter marker.
+ * ExpandActionSheet — bottom sheet shown when the user taps Expand on a
+ * chapter marker.
  *
- * Paid users (plus/pro): single Expand CTA → calls useExpansionSubmit.
- * Free users: two-path UI — buy one credit ($5) via SubscriptionModal,
- *             or upgrade to Plus via router.push("/plans").
+ * Paper-light editorial register. Paid users see a single accent pill
+ * CTA. Free users see two NavRow-style options separated by a hairline:
+ * "Buy one credit" and "Upgrade to Plus". The Plus option gets accent
+ * subtitle copy so the recommended path reads louder without resorting
+ * to a card or filled background.
  *
- * After a successful submission the parent player handles navigation
- * (alreadyExisted=true → push to existing podcast; alreadyExisted=false →
- * stay on parent, let ChapterMarkers' realtime subscription flip the
- * affordance as generation progresses).
+ * Errors from the in-app expansion submit run through classifySwitchError
+ * and surface via the parent's PurchaseFailureSheet — the sheet itself
+ * never renders an inline error. Cancellations stay silent.
+ *
+ * The parent player owns the post-submit celebration sheet
+ * (ExpansionQueuedSheet) so success copy lives outside this component.
  */
 import { useState } from "react";
 import {
@@ -19,10 +24,13 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { Feather } from "@expo/vector-icons";
 import { SubscriptionModal } from "./SubscriptionModal";
 import { useSubscription } from "../hooks/useSubscription";
 import { useExpansionSubmit } from "../hooks/useExpansionSubmit";
+import { classifySwitchError } from "../lib/switchErrors";
+import type { SwitchFailure } from "../lib/switchErrors";
+import { TIERS, getDeltaCopy } from "../lib/tiers";
 import { color, font, layout, space, text } from "../theme/tokens";
 
 interface Props {
@@ -31,6 +39,17 @@ interface Props {
   sourceChapterTitle: string;
   onClose: () => void;
   onSubmitted: (podcastId: string, alreadyExisted: boolean) => void;
+  /**
+   * Route a classified failure up to the parent so it can surface a
+   * shared PurchaseFailureSheet (eyebrow "Couldn't expand"). The sheet
+   * itself never renders an inline error.
+   */
+  onError: (failure: SwitchFailure) => void;
+  /**
+   * Push to /plans. Routed via parent so the player can do its own
+   * navigation cleanup (close this sheet first, then navigate).
+   */
+  onUpgrade: () => void;
 }
 
 export function ExpandActionSheet({
@@ -39,36 +58,52 @@ export function ExpandActionSheet({
   sourceChapterTitle,
   onClose,
   onSubmitted,
+  onError,
+  onUpgrade,
 }: Props) {
-  const router = useRouter();
   const { subscription } = useSubscription();
-  const isFree = subscription?.tier === "free";
-  const { submit, submitting, error } = useExpansionSubmit();
+  const tier = subscription?.tier ?? "free";
+  const isFree = tier === "free";
+  const creditPrice = TIERS[tier].extraCreditPrice;
+  const plusSubtitle = `${TIERS.plus.priceLabel} · ${getDeltaCopy("free", "plus")}`;
+
+  const { submit, submitting } = useExpansionSubmit();
   const [showBuyCredit, setShowBuyCredit] = useState(false);
 
-  const handleExpand = async () => {
+  const runSubmit = async () => {
     try {
-      const { podcastId, alreadyExisted } = await submit(parentPodcastId, sourceChapterTitle);
-      onSubmitted(podcastId, alreadyExisted);
+      const { podcastId, alreadyExisted } = await submit(
+        parentPodcastId,
+        sourceChapterTitle,
+      );
       onClose();
-    } catch {
-      // Error surfaced via `error` state for inline display
+      onSubmitted(podcastId, alreadyExisted);
+    } catch (err) {
+      const classified = classifySwitchError(err);
+      if (classified.kind === "cancelled") return;
+      onClose();
+      onError(classified);
     }
   };
 
   const handleBuyCreditDone = async () => {
     setShowBuyCredit(false);
-    await handleExpand();
+    await runSubmit();
   };
 
   const handleUpgrade = () => {
     onClose();
-    router.push("/plans");
+    onUpgrade();
   };
 
   return (
     <>
-      <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Modal
+        visible={visible && !showBuyCredit}
+        animationType="slide"
+        transparent
+        onRequestClose={onClose}
+      >
         <View style={styles.overlay}>
           <Pressable style={styles.scrim} onPress={onClose} />
           <SafeAreaView style={styles.sheet} edges={["left", "right", "bottom"]}>
@@ -78,38 +113,40 @@ export function ExpandActionSheet({
 
             <View style={styles.body}>
               <Text style={styles.eyebrow}>Expand this chapter</Text>
-              <Text style={styles.title}>{sourceChapterTitle}</Text>
-
-              {error && <Text style={styles.error}>{error}</Text>}
+              <Text style={styles.title} numberOfLines={3}>
+                {sourceChapterTitle}
+              </Text>
 
               {isFree ? (
                 <>
-                  <Text style={styles.subtitle}>Two ways to keep going:</Text>
-                  <View style={styles.optionsStack}>
-                    <Pressable
-                      onPress={() => setShowBuyCredit(true)}
-                      style={({ pressed }) => [styles.optionOutline, pressed && styles.optionPressed]}
-                    >
-                      <Text style={styles.optionTitle}>Buy one credit ($5)</Text>
-                      <Text style={styles.optionMeta}>Use for this episode</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={handleUpgrade}
-                      style={({ pressed }) => [styles.optionFilled, pressed && styles.optionPressed]}
-                    >
-                      <Text style={styles.optionTitleFilled}>Upgrade to Plus</Text>
-                      <Text style={styles.optionMetaFilled}>
-                        $14.99/mo · 8 credits, no ads, expansions included
-                      </Text>
-                    </Pressable>
-                  </View>
+                  <Text style={styles.subtitle}>Two ways to keep going.</Text>
+
+                  <View style={styles.optionDivider} />
+                  <OptionRow
+                    title="Buy one credit"
+                    subtitle={`$${creditPrice} · use for this expansion`}
+                    onPress={() => setShowBuyCredit(true)}
+                  />
+                  <View style={styles.optionDivider} />
+                  <OptionRow
+                    title={`Upgrade to ${TIERS.plus.name}`}
+                    subtitle={plusSubtitle}
+                    subtitleAccent
+                    onPress={handleUpgrade}
+                  />
+                  <View style={styles.optionDivider} />
                 </>
               ) : (
                 <>
-                  <Text style={styles.subtitle}>Uses 1 credit · ~10 min to generate</Text>
+                  <Text style={styles.subtitle}>
+                    Uses 1 credit · ~10 min to generate.
+                  </Text>
                   <Pressable
-                    onPress={handleExpand}
+                    onPress={runSubmit}
                     disabled={submitting}
+                    accessibilityRole="button"
+                    accessibilityLabel="Expand chapter"
+                    accessibilityState={{ disabled: submitting }}
                     style={({ pressed }) => [
                       styles.cta,
                       submitting && styles.ctaDisabled,
@@ -117,7 +154,7 @@ export function ExpandActionSheet({
                     ]}
                   >
                     <Text style={styles.ctaLabel}>
-                      {submitting ? "Submitting…" : "Expand chapter"}
+                      {submitting ? "Submitting" : "Expand chapter"}
                     </Text>
                   </Pressable>
                 </>
@@ -127,6 +164,8 @@ export function ExpandActionSheet({
                 onPress={onClose}
                 hitSlop={layout.hitSlop}
                 style={styles.cancelRow}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.cancel}>
                   {isFree ? "Maybe later" : "Cancel"}
@@ -139,15 +178,53 @@ export function ExpandActionSheet({
 
       <SubscriptionModal
         visible={showBuyCredit}
-        tier={subscription?.tier ?? "free"}
+        tier={tier}
         onClose={() => setShowBuyCredit(false)}
         onPurchased={handleBuyCreditDone}
         onError={(failure) => {
-          console.warn("[ExpandActionSheet] credit purchase failed:", failure);
           setShowBuyCredit(false);
+          onClose();
+          onError(failure);
         }}
       />
     </>
+  );
+}
+
+interface OptionRowProps {
+  title: string;
+  subtitle: string;
+  subtitleAccent?: boolean;
+  onPress: () => void;
+}
+
+function OptionRow({
+  title,
+  subtitle,
+  subtitleAccent = false,
+  onPress,
+}: OptionRowProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${subtitle}`}
+      style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
+    >
+      <View style={styles.optionBody}>
+        <Text style={styles.optionTitle}>{title}</Text>
+        <Text
+          style={
+            subtitleAccent
+              ? styles.optionSubtitleAccent
+              : styles.optionSubtitle
+          }
+        >
+          {subtitle}
+        </Text>
+      </View>
+      <Feather name="chevron-right" size={20} color={color.inkSecondary} />
+    </Pressable>
   );
 }
 
@@ -196,48 +273,44 @@ const styles = StyleSheet.create({
     ...text.bodySmall,
     color: color.inkSecondary,
     marginTop: space.xs,
-    marginBottom: space.md,
   },
-  error: {
-    ...text.bodySmall,
-    color: color.warning,
-    marginVertical: space.sm,
+  optionDivider: {
+    height: 1,
+    backgroundColor: color.hairline,
   },
-  optionsStack: {
+  option: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: space.lg,
     gap: space.md,
   },
-  optionOutline: {
-    borderWidth: 1,
-    borderColor: color.accent,
-    borderRadius: 16,
-    padding: space.lg,
-    gap: space.xs,
+  optionPressed: {
+    opacity: 0.55,
   },
-  optionFilled: {
-    backgroundColor: color.accent,
-    borderRadius: 16,
-    padding: space.lg,
-    gap: space.xs,
+  optionBody: {
+    flex: 1,
+    gap: space.xxs,
   },
-  optionPressed: { opacity: 0.85 },
   optionTitle: {
-    fontFamily: font.sansSemiBold,
-    fontSize: 16,
-    color: color.accent,
+    fontFamily: font.serifSemiBold,
+    fontSize: 19,
+    lineHeight: 26,
+    color: color.ink,
+    letterSpacing: -0.2,
   },
-  optionTitleFilled: {
-    fontFamily: font.sansSemiBold,
-    fontSize: 16,
-    color: color.paper,
-  },
-  optionMeta: {
-    ...text.bodySmall,
+  optionSubtitle: {
+    fontFamily: font.sansMedium,
+    fontSize: 14,
+    lineHeight: 20,
     color: color.inkSecondary,
+    marginTop: space.xs,
   },
-  optionMetaFilled: {
-    ...text.bodySmall,
-    color: color.paper,
-    opacity: 0.85,
+  optionSubtitleAccent: {
+    fontFamily: font.sansMedium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: color.accent,
+    marginTop: space.xs,
   },
   cta: {
     width: "100%",

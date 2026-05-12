@@ -30,7 +30,6 @@ export const TIERS: Record<Tier, TierInfo> = {
     facts: [
       "2 podcasts a month",
       "Ads in podcasts",
-      "No Deep Dive",
       "Extra credit at $5",
     ],
     extraCreditPrice: 5,
@@ -43,7 +42,6 @@ export const TIERS: Record<Tier, TierInfo> = {
     facts: [
       "8 podcasts a month",
       "No ads",
-      "15 min Deep Dive a month",
       "Extra credit at $4",
     ],
     extraCreditPrice: 4,
@@ -56,7 +54,6 @@ export const TIERS: Record<Tier, TierInfo> = {
     facts: [
       "20 podcasts a month",
       "No ads",
-      "45 min Deep Dive a month",
       "Deeper research per podcast",
       "Extra credit at $3",
     ],
@@ -125,15 +122,15 @@ interface SwitchKey {
 
 const DELTA_COPY: Record<string, string> = {
   "free->plus":
-    "More podcasts (8), no ads, 15 minutes of Deep Dive, and cheaper extra credits ($4).",
+    "More podcasts (8), no ads, and cheaper extra credits ($4).",
   "free->pro":
-    "More podcasts (20), no ads, 45 minutes of Deep Dive, and the cheapest extra credits ($3).",
+    "More podcasts (20), no ads, deeper research, and the cheapest extra credits ($3).",
   "plus->pro":
-    "More podcasts (20), longer Deep Dive (45 min), and cheaper extra credits ($3).",
+    "More podcasts (20), deeper research per podcast, and cheaper extra credits ($3).",
   "pro->plus":
-    "Fewer podcasts (8), shorter Deep Dive (15 min), and slightly more for extra credits ($4).",
-  "plus->free": "Ads return, no Deep Dive, and just 2 podcasts a month.",
-  "pro->free": "Ads return, no Deep Dive, and just 2 podcasts a month.",
+    "Fewer podcasts (8), shallower research, and slightly more for extra credits ($4).",
+  "plus->free": "Ads return, and just 2 podcasts a month.",
+  "pro->free": "Ads return, and just 2 podcasts a month.",
 };
 
 export function getDeltaCopy(from: Tier, to: Tier): string {

@@ -25,7 +25,10 @@ import { AudioPlayer } from "../../src/components/AudioPlayer";
 import { ChapterMarkers } from "../../src/components/ChapterMarkers";
 import { DiveBar } from "../../src/components/DiveBar";
 import { ExpandActionSheet } from "../../src/components/ExpandActionSheet";
+import { ExpansionQueuedSheet } from "../../src/components/ExpansionQueuedSheet";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
+import { PurchaseFailureSheet } from "../../src/components/PurchaseFailureSheet";
+import type { SwitchFailure } from "../../src/lib/switchErrors";
 import {
   toPodcast,
   type Podcast,
@@ -40,6 +43,9 @@ export default function PlayerScreen() {
   const [podcast, setPodcast] = useState<Podcast | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandTarget, setExpandTarget] = useState<string | null>(null);
+  const [showQueued, setShowQueued] = useState(false);
+  const [expandFailure, setExpandFailure] = useState<SwitchFailure | null>(null);
+  const [pendingChapter, setPendingChapter] = useState<string | null>(null);
   const { subscription } = useSubscription();
   const { current, ready, load } = usePlayingPodcast();
 
@@ -71,6 +77,7 @@ export default function PlayerScreen() {
   }, [podcast?.id, podcast?.audioUrl, load]);
 
   const handleExpandTapped = (chapterTitle: string) => {
+    setPendingChapter(chapterTitle);
     setExpandTarget(chapterTitle);
   };
 
@@ -81,9 +88,34 @@ export default function PlayerScreen() {
   const handleExpandSubmitted = (submittedId: string, alreadyExisted: boolean) => {
     if (alreadyExisted) {
       router.push(`/player/${submittedId}`);
+      return;
     }
-    // For new submissions, ChapterMarkers' realtime sub flips the affordance
-    // as generation progresses; nothing else to do here.
+    // New submission — celebrate. ChapterMarkers' realtime sub will flip
+    // the affordance to "Researching…" as generation progresses.
+    setShowQueued(true);
+  };
+
+  const handleExpandError = (failure: SwitchFailure) => {
+    setExpandFailure(failure);
+  };
+
+  const handleExpandUpgrade = () => {
+    router.push("/plans");
+  };
+
+  const handleFailureRetry = () => {
+    setExpandFailure(null);
+    if (pendingChapter) setExpandTarget(pendingChapter);
+  };
+
+  const handleFailureSecondary = () => {
+    setExpandFailure(null);
+    setPendingChapter(null);
+  };
+
+  const handleFailureDismiss = () => {
+    setExpandFailure(null);
+    setPendingChapter(null);
   };
 
   // Handle ?expand=N deep-link query param — open the action sheet for the
@@ -222,15 +254,34 @@ export default function PlayerScreen() {
           onSkipForward={player.skipForward}
         />
 
-        {expandTarget && (
+        {expandTarget && expandFailure === null && (
           <ExpandActionSheet
             visible
             parentPodcastId={String(id)}
             sourceChapterTitle={expandTarget}
             onClose={() => setExpandTarget(null)}
             onSubmitted={handleExpandSubmitted}
+            onError={handleExpandError}
+            onUpgrade={handleExpandUpgrade}
           />
         )}
+
+        <ExpansionQueuedSheet
+          visible={showQueued}
+          onDismiss={() => {
+            setShowQueued(false);
+            setPendingChapter(null);
+          }}
+        />
+
+        <PurchaseFailureSheet
+          visible={expandFailure !== null}
+          failure={expandFailure}
+          eyebrow="Couldn't expand"
+          onRetry={handleFailureRetry}
+          onSecondary={handleFailureSecondary}
+          onDismiss={handleFailureDismiss}
+        />
       </View>
     </SafeAreaView>
   );
