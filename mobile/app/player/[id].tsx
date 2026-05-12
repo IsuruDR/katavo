@@ -176,6 +176,7 @@ export default function PlayerScreen() {
           isPlaying={player.isPlaying}
           position={player.progress.position}
           duration={player.progress.duration}
+          podcastId={String(id)}
           onPlay={player.play}
           onPause={player.pause}
           onSeek={player.seekTo}

@@ -19,11 +19,13 @@ import {
 import Slider from "@react-native-community/slider";
 import { Feather } from "@expo/vector-icons";
 import { color, font, layout, motion, space } from "../theme/tokens";
+import { usePlaybackEvents } from "../hooks/usePlaybackEvents";
 
 interface Props {
   isPlaying: boolean;
   position: number;
   duration: number;
+  podcastId: string | null;
   onPlay: () => void;
   onPause: () => void;
   onSeek: (seconds: number) => void;
@@ -42,12 +44,25 @@ export function AudioPlayer({
   isPlaying,
   position,
   duration,
+  podcastId,
   onPlay,
   onPause,
   onSeek,
   onSkipBack,
   onSkipForward,
 }: Props) {
+  const { record } = usePlaybackEvents(podcastId);
+
+  const handleSkipBack = () => {
+    record("skip_back", position);
+    onSkipBack();
+  };
+
+  const handleSkipForward = () => {
+    record("skip_forward", position);
+    onSkipForward();
+  };
+
   const skipBackDisabled = position < 10;
   const skipForwardDisabled = duration > 0 && position + 10 > duration;
 
@@ -72,7 +87,7 @@ export function AudioPlayer({
         <SkipButton
           label="−10"
           disabled={skipBackDisabled}
-          onPress={onSkipBack}
+          onPress={handleSkipBack}
           accessibilityLabel="Skip back ten seconds"
         />
         <PlayButton
@@ -82,7 +97,7 @@ export function AudioPlayer({
         <SkipButton
           label="+10"
           disabled={skipForwardDisabled}
-          onPress={onSkipForward}
+          onPress={handleSkipForward}
           accessibilityLabel="Skip forward ten seconds"
         />
       </View>
