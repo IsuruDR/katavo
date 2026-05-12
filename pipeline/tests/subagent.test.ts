@@ -82,4 +82,42 @@ describe("runSubagent", () => {
     expect(result.status).toBe("failed");
     expect(result.notes).toMatch(/e2/);
   });
+
+  it("logs final-attempt failure with taskId, question, and notes", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockInvoke
+      .mockResolvedValueOnce({
+        structuredResponse: { taskId: "task_5", question: "Why X?", findings: [], status: "failed", notes: "tavily thin" },
+      })
+      .mockResolvedValueOnce({
+        structuredResponse: { taskId: "task_5", question: "Why X?", findings: [], status: "failed", notes: "still thin" },
+      });
+    const { runSubagent } = await import("../src/podcast_pipeline/nodes/research/subagent.js");
+    await runSubagent(
+      { id: "task_5", question: "Why X?", context: "C", searchHints: ["h"] },
+      { maxSearches: 2, maxReflections: 1 },
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[subagent] final-attempt failure:",
+      expect.objectContaining({ taskId: "task_5", question: "Why X?", notes: "still thin" }),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("logs final-attempt throw with taskId, question, and error", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockInvoke
+      .mockRejectedValueOnce(new Error("first"))
+      .mockRejectedValueOnce(new Error("openrouter_429"));
+    const { runSubagent } = await import("../src/podcast_pipeline/nodes/research/subagent.js");
+    await runSubagent(
+      { id: "task_6", question: "How Y?", context: "C", searchHints: ["h"] },
+      { maxSearches: 2, maxReflections: 1 },
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[subagent] final-attempt threw:",
+      expect.objectContaining({ taskId: "task_6", question: "How Y?", error: "openrouter_429" }),
+    );
+    warnSpy.mockRestore();
+  });
 });

@@ -63,6 +63,7 @@ export type Database = {
           duration_seconds: number | null
           error_message: string | null
           expansion_prompt_sent_at: string | null
+          failure_diagnostics: Json | null
           has_ads: boolean
           id: string
           langgraph_run_id: string | null
@@ -88,6 +89,7 @@ export type Database = {
           duration_seconds?: number | null
           error_message?: string | null
           expansion_prompt_sent_at?: string | null
+          failure_diagnostics?: Json | null
           has_ads?: boolean
           id?: string
           langgraph_run_id?: string | null
@@ -113,6 +115,7 @@ export type Database = {
           duration_seconds?: number | null
           error_message?: string | null
           expansion_prompt_sent_at?: string | null
+          failure_diagnostics?: Json | null
           has_ads?: boolean
           id?: string
           langgraph_run_id?: string | null

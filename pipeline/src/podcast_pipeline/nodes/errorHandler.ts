@@ -8,15 +8,19 @@ import { sendPodcastNotification } from "../../routes/notifyComplete.js";
 export async function handlePipelineFailure(
   podcastId: string,
   errorMessage: string,
+  diagnostics?: Record<string, unknown> | null,
 ): Promise<void> {
   const supabase = getSupabaseClient();
 
+  const update: Record<string, unknown> = {
+    status: "failed",
+    error_message: errorMessage,
+  };
+  if (diagnostics) update.failure_diagnostics = diagnostics;
+
   const { error: updateError } = await supabase
     .from("podcasts")
-    .update({
-      status: "failed",
-      error_message: errorMessage,
-    })
+    .update(update)
     .eq("id", podcastId);
   if (updateError) {
     console.error(

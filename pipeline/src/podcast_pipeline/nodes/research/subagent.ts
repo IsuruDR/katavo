@@ -88,15 +88,28 @@ export async function runSubagent(
         timeoutAfter(SUBAGENT_WALLCLOCK_MS, `subagent_wallclock_exceeded_${task.id}`),
       ]);
       if (result.status !== "failed") return result;
-      if (attempt === 2) return result;
+      if (attempt === 2) {
+        console.warn("[subagent] final-attempt failure:", {
+          taskId: task.id,
+          question: task.question,
+          notes: result.notes ?? "(no notes)",
+        });
+        return result;
+      }
     } catch (err: any) {
       if (attempt === 2) {
+        const message = err?.message ?? String(err);
+        console.warn("[subagent] final-attempt threw:", {
+          taskId: task.id,
+          question: task.question,
+          error: message,
+        });
         return {
           taskId: task.id,
           question: task.question,
           findings: [],
           status: "failed",
-          notes: `Subagent threw on retry: ${err?.message ?? String(err)}`,
+          notes: `Subagent threw on retry: ${message}`,
         };
       }
     }

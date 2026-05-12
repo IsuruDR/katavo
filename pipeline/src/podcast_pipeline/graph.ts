@@ -97,6 +97,7 @@ export async function runPipeline(
       await handlePipelineFailure(
         state.podcastId,
         result.errorMessage ?? DEFAULT_FAILURE_MESSAGE,
+        result.rawResearchResponse,
       );
     }
 

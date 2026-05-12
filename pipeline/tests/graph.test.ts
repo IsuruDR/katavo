@@ -112,6 +112,7 @@ describe("runPipeline", () => {
     expect(mockHandleFailure).toHaveBeenCalledWith(
       "pod-1",
       "Deep research failed: rate_limit",
+      undefined,
     );
     expect(result.status).toBe("failed");
   });
@@ -128,6 +129,29 @@ describe("runPipeline", () => {
     expect(mockHandleFailure).not.toHaveBeenCalled();
   });
 
+  it("forwards rawResearchResponse as diagnostics when present on a failed result", async () => {
+    const rawResearchResponse = {
+      tasks: [{ id: "task_0", question: "Q1" }],
+      subagentFindings: [
+        { taskId: "task_0", question: "Q1", status: "failed", notes: "tavily_error" },
+      ],
+    };
+    vi.spyOn(graph, "invoke").mockResolvedValueOnce({
+      status: "failed",
+      errorMessage: "Research insufficient: 1 of 1 angles failed",
+      podcastId: "pod-diag",
+      rawResearchResponse,
+    } as any);
+
+    await runPipeline({ podcastId: "pod-diag" });
+
+    expect(mockHandleFailure).toHaveBeenCalledWith(
+      "pod-diag",
+      "Research insufficient: 1 of 1 angles failed",
+      rawResearchResponse,
+    );
+  });
+
   it("uses a default message when errorMessage is missing on a failed result", async () => {
     vi.spyOn(graph, "invoke").mockResolvedValueOnce({
       status: "failed",
@@ -136,6 +160,6 @@ describe("runPipeline", () => {
 
     await runPipeline({ podcastId: "pod-3" });
 
-    expect(mockHandleFailure).toHaveBeenCalledWith("pod-3", "Pipeline failed");
+    expect(mockHandleFailure).toHaveBeenCalledWith("pod-3", "Pipeline failed", undefined);
   });
 });
