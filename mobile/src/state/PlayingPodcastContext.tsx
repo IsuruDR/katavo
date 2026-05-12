@@ -43,6 +43,11 @@ export function PlayingPodcastProvider({ children }: { children: ReactNode }) {
   const [current, setCurrentState] = useState<PlayingPodcast | null>(null);
   const [ready, setReady] = useState(false);
   const currentRef = useRef<PlayingPodcast | null>(null);
+  // In-memory cache of last-known playback position per podcast id.
+  // Lets users pop back from an expansion to the parent (or vice versa)
+  // and resume where they left off, instead of having loadTrack reset to 0.
+  // Session-scoped — cleared on app restart, which is the right ergonomic.
+  const positionsByIdRef = useRef<Map<string, number>>(new Map());
 
   const setCurrent = useCallback((next: PlayingPodcast | null) => {
     currentRef.current = next;
@@ -60,6 +65,22 @@ export function PlayingPodcastProvider({ children }: { children: ReactNode }) {
         setReady(true);
         return;
       }
+
+      // Capture outgoing track's position before TrackPlayer.reset() wipes it.
+      // Swallow errors — if the player isn't ready or progress is unavailable,
+      // we lose this session's resume point for that track but don't crash.
+      const outgoingId = currentRef.current?.id;
+      if (outgoingId) {
+        try {
+          const { position } = await TrackPlayer.getProgress();
+          if (position > 0) {
+            positionsByIdRef.current.set(outgoingId, position);
+          }
+        } catch {
+          // intentionally ignored
+        }
+      }
+
       setReady(false);
       setCurrent(podcast);
       await setupPlayer();
@@ -70,6 +91,14 @@ export function PlayingPodcastProvider({ children }: { children: ReactNode }) {
           podcast.topic,
           podcast.coverUrl,
         );
+        const cached = positionsByIdRef.current.get(podcast.id);
+        if (cached && cached > 0) {
+          try {
+            await TrackPlayer.seekTo(cached);
+          } catch {
+            // intentionally ignored — playback just starts from 0
+          }
+        }
       }
       setReady(true);
     },
@@ -77,6 +106,18 @@ export function PlayingPodcastProvider({ children }: { children: ReactNode }) {
   );
 
   const clear = useCallback(async () => {
+    // Capture outgoing position so a subsequent load() can resume.
+    const outgoingId = currentRef.current?.id;
+    if (outgoingId) {
+      try {
+        const { position } = await TrackPlayer.getProgress();
+        if (position > 0) {
+          positionsByIdRef.current.set(outgoingId, position);
+        }
+      } catch {
+        // intentionally ignored
+      }
+    }
     setCurrent(null);
     setReady(false);
     await TrackPlayer.reset();
