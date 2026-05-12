@@ -27,6 +27,7 @@ vi.mock("../src/podcast_pipeline/nodes/coverArtwork.js", () => ({
 import {
   metadataWriter,
   extractChapters,
+  extractChapterTranscripts,
 } from "../src/podcast_pipeline/nodes/metadataWriter.js";
 
 describe("extractChapters", () => {
@@ -177,5 +178,47 @@ describe("metadataWriter", () => {
         chapter_research_map: null,
       }),
     );
+  });
+});
+
+describe("extractChapterTranscripts", () => {
+  it("splits script on chapter markers and returns title→text map", () => {
+    const script = `Preamble before any marker.
+
+[CHAPTER: Opening]
+Hello world. This is the opening.
+
+[CHAPTER: Middle]
+Middle content here.
+
+[CHAPTER: Closer]
+Final thoughts.`;
+    const out = extractChapterTranscripts(script);
+    expect(Object.keys(out)).toEqual(["Opening", "Middle", "Closer"]);
+    expect(out["Opening"]).toContain("Hello world");
+    expect(out["Middle"]).toContain("Middle content here");
+    expect(out["Closer"]).toContain("Final thoughts");
+  });
+
+  it("strips AD markers from chapter text", () => {
+    const script = `[CHAPTER: A]
+Some prose.
+[AD:MID_ROLL]
+More prose.`;
+    const out = extractChapterTranscripts(script);
+    expect(out["A"]).not.toContain("[AD:");
+    expect(out["A"]).toContain("Some prose");
+    expect(out["A"]).toContain("More prose");
+  });
+
+  it("returns empty object when no chapter markers present", () => {
+    expect(extractChapterTranscripts("just text no markers")).toEqual({});
+  });
+
+  it("skips chapters with empty text", () => {
+    const script = `[CHAPTER: Empty][CHAPTER: Real]
+Content`;
+    const out = extractChapterTranscripts(script);
+    expect(out).toEqual({ Real: "Content" });
   });
 });
