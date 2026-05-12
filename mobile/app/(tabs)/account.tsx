@@ -95,6 +95,12 @@ export default function Account() {
   const credits = serverCredits + optimisticCredits;
   const hasDeepDive = !!subscription && subscription.tier !== "free";
   const renewal = formatRenewalDate(subscription?.renewalDate ?? null);
+  // Deep Dive UI sunset — minutes-remaining display and free-tier upgrade pitch
+  // both hidden. Underlying subscription columns (deep_dive_minutes_*) and RC
+  // webhook deep-dive minute allocation logic remain in place for future revival.
+  // To re-enable: flip this to `true`. See spec at
+  // docs/superpowers/specs/2026-05-12-chapter-expansions-design.md.
+  const SHOW_DEEP_DIVE = false;
   const creditsLabel = `${credits} ${credits === 1 ? "credit" : "credits"}`;
   const planSubtitle = renewal
     ? `${creditsLabel} · resets ${renewal}`
@@ -138,7 +144,7 @@ export default function Account() {
           onPress={() => router.push("/plans")}
         />
 
-        {hasDeepDive && subscription ? (
+        {SHOW_DEEP_DIVE && (hasDeepDive && subscription ? (
           <Section eyebrow="Deep Dive">
             <Text style={styles.sectionValue}>
               {subscription.deepDiveMinutesRemaining} of{" "}
@@ -158,7 +164,7 @@ export default function Account() {
               onPress={() => router.push("/plans")}
             />
           </View>
-        )}
+        ))}
 
         <NavRow
           eyebrow="Voice"

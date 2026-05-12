@@ -121,6 +121,12 @@ export default function PlayerScreen() {
     return chapters[idx] ?? null;
   }, [chapters, player.progress.position]);
 
+  // Deep Dive UI sunset — feature replaced by chapter expansions (v15-v17).
+  // Component file + route + hook + ElevenLabs deps all preserved in the
+  // codebase for future revival. To re-enable: flip this to `true`. See spec at
+  // docs/superpowers/specs/2026-05-12-chapter-expansions-design.md.
+  const SHOW_DEEP_DIVE = false;
+
   const handleDive = useCallback(() => {
     if (!podcast || !currentChapter) return;
     if (diveLocked) {
@@ -196,7 +202,7 @@ export default function PlayerScreen() {
           )}
         </ScrollView>
 
-        {currentChapter && (
+        {SHOW_DEEP_DIVE && currentChapter && (
           <DiveBar
             chapterTitle={currentChapter.title}
             locked={diveLocked}
