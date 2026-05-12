@@ -157,6 +157,9 @@ export default function PlayerScreen() {
               chapters={chapters}
               currentPosition={player.progress.position}
               onChapterPress={player.seekTo}
+              parentPodcastId={String(id)}
+              onExpandTapped={() => {}} // wired in Chunk 7
+              onOpenExpansion={() => {}} // wired in Chunk 7
             />
           )}
         </ScrollView>

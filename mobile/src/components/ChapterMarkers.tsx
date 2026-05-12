@@ -9,9 +9,15 @@
  * The Dive action lives on the persistent DiveBar in the player layout,
  * not inside the row. That keeps the chapter list pure-content and lets
  * Dive feel like a confident second-to-play CTA.
+ *
+ * When parentExpandable is true (from useChapterExpansions), each row
+ * shows an Expand pill, a pipeline status strip, or an "Open expansion"
+ * link depending on that chapter's expansion state.
  */
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { color, font, space } from "../theme/tokens";
+import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { color, font, layout, space } from "../theme/tokens";
+import { useChapterExpansions } from "../hooks/useChapterExpansions";
+import { PipelineStatusStrip } from "./PipelineStatusStrip";
 
 interface Chapter {
   timestampSeconds: number;
@@ -22,6 +28,9 @@ interface Props {
   chapters: Chapter[];
   currentPosition: number;
   onChapterPress: (seconds: number) => void;
+  parentPodcastId: string;
+  onExpandTapped: (chapterTitle: string) => void;
+  onOpenExpansion: (expansionPodcastId: string) => void;
 }
 
 function formatTime(seconds: number | undefined | null): string {
@@ -37,7 +46,12 @@ export function ChapterMarkers({
   chapters,
   currentPosition,
   onChapterPress,
+  parentPodcastId,
+  onExpandTapped,
+  onOpenExpansion,
 }: Props) {
+  const { expansions, parentExpandable } = useChapterExpansions(parentPodcastId);
+
   const currentChapterIndex = chapters.reduce((acc, ch, i) => {
     if (currentPosition >= ch.timestampSeconds) return i;
     return acc;
@@ -66,6 +80,42 @@ export function ChapterMarkers({
                 {item.title}
               </Text>
               {current && <Text style={styles.nowPlaying}>Now playing</Text>}
+              {parentExpandable && (() => {
+                const entry = expansions.get(item.title);
+                if (!entry) {
+                  return (
+                    <Pressable
+                      onPress={() => onExpandTapped(item.title)}
+                      hitSlop={layout.hitSlop}
+                      style={styles.expandPill}
+                    >
+                      <Text style={styles.expandPillLabel}>Expand</Text>
+                    </Pressable>
+                  );
+                }
+                if (entry.status === "complete") {
+                  return (
+                    <Pressable
+                      onPress={() => onOpenExpansion(entry.podcastId)}
+                      hitSlop={layout.hitSlop}
+                    >
+                      <Text style={styles.openExpansionLink}>Open expansion ›</Text>
+                    </Pressable>
+                  );
+                }
+                if (entry.status === "failed") {
+                  return (
+                    <Pressable
+                      onPress={() => onExpandTapped(item.title)}
+                      hitSlop={layout.hitSlop}
+                    >
+                      <Text style={styles.tryAgainLink}>Try again</Text>
+                    </Pressable>
+                  );
+                }
+                // queued / researching / scripting / generating_audio / fact_checking
+                return <PipelineStatusStrip status={entry.status} />;
+              })()}
             </View>
           </TouchableOpacity>
         );
@@ -120,5 +170,28 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: color.accent,
     marginTop: space.xxs,
+  },
+  expandPill: {
+    borderWidth: 1,
+    borderColor: color.accent,
+    borderRadius: 999,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.xxs,
+    alignSelf: "flex-start",
+  },
+  expandPillLabel: {
+    fontFamily: font.sansSemiBold,
+    fontSize: 12,
+    color: color.accent,
+  },
+  openExpansionLink: {
+    fontFamily: font.sansMedium,
+    fontSize: 13,
+    color: color.inkSecondary,
+  },
+  tryAgainLink: {
+    fontFamily: font.sansMedium,
+    fontSize: 13,
+    color: color.warning,
   },
 });
