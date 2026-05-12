@@ -357,11 +357,15 @@ describe("runExpansionPromptsScan", () => {
         { timestampSeconds: 60, title: "Middle" },
         { timestampSeconds: 120, title: "End" },
       ],
-      profiles: { expo_push_token: "ExponentPushToken[abc]", has_used_expand: true },
       research_contexts: { research_document: {} },
     };
     createClient.mockReturnValue(
-      createMockClient({ podcasts: [{ data: [candidate], error: null }] }),
+      createMockClient({
+        podcasts: [{ data: [candidate], error: null }],
+        profiles: [
+          { data: [{ id: "user-1", expo_push_token: "ExponentPushToken[abc]", has_used_expand: true }], error: null },
+        ],
+      }),
     );
     const { runExpansionPromptsScan } = await import(
       "../src/jobs/expansionPromptsScan.js"
@@ -381,11 +385,15 @@ describe("runExpansionPromptsScan", () => {
         { timestampSeconds: 60, title: "Middle" },
         { timestampSeconds: 120, title: "End" },
       ],
-      profiles: { expo_push_token: null, has_used_expand: false },
       research_contexts: { research_document: {} },
     };
     createClient.mockReturnValue(
-      createMockClient({ podcasts: [{ data: [candidate], error: null }] }),
+      createMockClient({
+        podcasts: [{ data: [candidate], error: null }],
+        profiles: [
+          { data: [{ id: "user-1", expo_push_token: null, has_used_expand: false }], error: null },
+        ],
+      }),
     );
     const { runExpansionPromptsScan } = await import(
       "../src/jobs/expansionPromptsScan.js"
@@ -404,7 +412,6 @@ describe("runExpansionPromptsScan", () => {
         { timestampSeconds: 0, title: "Intro" },
         { timestampSeconds: 60, title: "End" },
       ],
-      profiles: { expo_push_token: "ExponentPushToken[abc]", has_used_expand: false },
       research_contexts: { research_document: {} },
     };
     createClient.mockReturnValue(
@@ -413,7 +420,12 @@ describe("runExpansionPromptsScan", () => {
           { data: [candidate], error: null },
           // expansion count check
           { data: null, error: null, count: 0 },
-          // playback_events (for pickChapter — won't reach but queue it)
+        ],
+        profiles: [
+          { data: [{ id: "user-1", expo_push_token: "ExponentPushToken[abc]", has_used_expand: false }], error: null },
+        ],
+        playback_events: [
+          // for pickChapter — won't reach but queue it
           { data: [], error: null },
         ],
       }),
@@ -438,7 +450,6 @@ describe("runExpansionPromptsScan", () => {
         { timestampSeconds: 60, title: "Middle" },
         { timestampSeconds: 120, title: "End" },
       ],
-      profiles: { expo_push_token: "ExponentPushToken[abc]", has_used_expand: false },
       research_contexts: { research_document: {} },
     };
 
@@ -451,6 +462,9 @@ describe("runExpansionPromptsScan", () => {
           { data: null, error: null, count: 0 },
           // 3. CAS stamp → null means someone else already stamped
           { data: null, error: null },
+        ],
+        profiles: [
+          { data: [{ id: "user-1", expo_push_token: "ExponentPushToken[abc]", has_used_expand: false }], error: null },
         ],
         playback_events: [
           // for pickChapter
@@ -487,7 +501,6 @@ describe("runExpansionPromptsScan", () => {
         { timestampSeconds: 60, title: "Middle" },
         { timestampSeconds: 120, title: "End" },
       ],
-      profiles: { expo_push_token: "ExponentPushToken[stale]", has_used_expand: false },
       research_contexts: { research_document: {} },
     };
 
@@ -499,6 +512,12 @@ describe("runExpansionPromptsScan", () => {
         { data: null, error: null, count: 0 },
         // 3. CAS stamp — succeeds
         { data: { id: "pod-1" }, error: null },
+      ],
+      profiles: [
+        // 1. batch profile lookup
+        { data: [{ id: "user-1", expo_push_token: "ExponentPushToken[stale]", has_used_expand: false }], error: null },
+        // 2. token-null update on DeviceNotRegistered
+        { data: null, error: null },
       ],
       playback_events: [
         { data: [], error: null },
@@ -515,8 +534,8 @@ describe("runExpansionPromptsScan", () => {
     const result = await runExpansionPromptsScan();
 
     expect(result).toEqual({ sent: 1, skipped: 0 });
-    // Verify profiles table was touched to null the token
+    // Verify profiles table was touched twice — once for batch lookup, once to null the token
     const profileCalls = fromSpy.mock.calls.filter(([t]) => t === "profiles");
-    expect(profileCalls.length).toBeGreaterThan(0);
+    expect(profileCalls.length).toBeGreaterThanOrEqual(2);
   });
 });

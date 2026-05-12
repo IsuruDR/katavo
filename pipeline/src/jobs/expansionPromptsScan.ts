@@ -36,8 +36,7 @@ export async function runExpansionPromptsScan(): Promise<{ sent: number; skipped
     .from("podcasts")
     .select(`
       id, user_id, topic, chapter_markers,
-      research_contexts ( research_document ),
-      profiles ( expo_push_token, has_used_expand )
+      research_contexts ( research_document )
     `)
     .eq("status", "complete")
     .is("parent_podcast_id", null)
@@ -52,16 +51,24 @@ export async function runExpansionPromptsScan(): Promise<{ sent: number; skipped
   }
   if (!candidates?.length) return { sent: 0, skipped: 0 };
 
+  // profiles and podcasts both reference auth.users separately, so PostgREST
+  // can't embed profiles into the podcasts query. Fetch profiles in a single
+  // batch lookup and join client-side.
+  const userIds = Array.from(new Set(candidates.map((r) => r.user_id)));
+  const { data: profilesRows } = await supabase
+    .from("profiles")
+    .select("id, expo_push_token, has_used_expand")
+    .in("id", userIds);
+  const profileByUserId = new Map<string, { expo_push_token: string | null; has_used_expand: boolean }>();
+  for (const p of profilesRows ?? []) {
+    profileByUserId.set(p.id, { expo_push_token: p.expo_push_token, has_used_expand: p.has_used_expand });
+  }
+
   let sent = 0;
   let skipped = 0;
 
   for (const row of candidates) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const profile = Array.isArray((row as any).profiles)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? (row as any).profiles[0]
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      : (row as any).profiles;
+    const profile = profileByUserId.get(row.user_id);
     if (!profile?.expo_push_token || profile.has_used_expand) {
       skipped++;
       continue;
