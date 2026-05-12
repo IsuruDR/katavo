@@ -24,6 +24,7 @@ import { useSubscription } from "../../src/hooks/useSubscription";
 import { AudioPlayer } from "../../src/components/AudioPlayer";
 import { ChapterMarkers } from "../../src/components/ChapterMarkers";
 import { DiveBar } from "../../src/components/DiveBar";
+import { ExpandActionSheet } from "../../src/components/ExpandActionSheet";
 import { LoadingOverlay } from "../../src/components/LoadingOverlay";
 import {
   toPodcast,
@@ -34,10 +35,11 @@ import { usePlayingPodcast } from "../../src/state/PlayingPodcastContext";
 import { color, font, layout, space, text } from "../../src/theme/tokens";
 
 export default function PlayerScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, expand } = useLocalSearchParams<{ id: string; expand?: string }>();
   const router = useRouter();
   const [podcast, setPodcast] = useState<Podcast | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandTarget, setExpandTarget] = useState<string | null>(null);
   const { subscription } = useSubscription();
   const { current, ready, load } = usePlayingPodcast();
 
@@ -67,6 +69,36 @@ export default function PlayerScreen() {
       chapterMarkers: podcast.chapterMarkers ?? [],
     });
   }, [podcast?.id, podcast?.audioUrl, load]);
+
+  const handleExpandTapped = (chapterTitle: string) => {
+    setExpandTarget(chapterTitle);
+  };
+
+  const handleOpenExpansion = (expansionId: string) => {
+    router.push(`/player/${expansionId}`);
+  };
+
+  const handleExpandSubmitted = (submittedId: string, alreadyExisted: boolean) => {
+    if (alreadyExisted) {
+      router.push(`/player/${submittedId}`);
+    }
+    // For new submissions, ChapterMarkers' realtime sub flips the affordance
+    // as generation progresses; nothing else to do here.
+  };
+
+  // Handle ?expand=N deep-link query param — open the action sheet for the
+  // chapter at that index once the podcast is loaded.
+  useEffect(() => {
+    if (!podcast || !expand) return;
+    const idx = parseInt(expand, 10);
+    if (Number.isNaN(idx)) return;
+    const chapter = podcast.chapterMarkers?.[idx];
+    if (chapter?.title) {
+      setExpandTarget(chapter.title);
+    }
+    // Clear the param so we don't re-trigger on every render.
+    router.setParams({ expand: "" });
+  }, [podcast, expand, router]);
 
   const player = usePlayer();
   const isCurrentTrack = current?.id === podcast?.id;
@@ -158,8 +190,8 @@ export default function PlayerScreen() {
               currentPosition={player.progress.position}
               onChapterPress={player.seekTo}
               parentPodcastId={String(id)}
-              onExpandTapped={() => {}} // wired in Chunk 7
-              onOpenExpansion={() => {}} // wired in Chunk 7
+              onExpandTapped={handleExpandTapped}
+              onOpenExpansion={handleOpenExpansion}
             />
           )}
         </ScrollView>
@@ -183,6 +215,16 @@ export default function PlayerScreen() {
           onSkipBack={player.skipBack}
           onSkipForward={player.skipForward}
         />
+
+        {expandTarget && (
+          <ExpandActionSheet
+            visible
+            parentPodcastId={String(id)}
+            sourceChapterTitle={expandTarget}
+            onClose={() => setExpandTarget(null)}
+            onSubmitted={handleExpandSubmitted}
+          />
+        )}
       </View>
     </SafeAreaView>
   );
