@@ -73,7 +73,7 @@ export default function Generate() {
     setError(null);
     setPhase("submitting");
     try {
-      await submitPodcast(topic.trim(), answers);
+      await submitPodcast({ topic: topic.trim(), clarifyingAnswers: answers });
       refreshSub();
       // First successful submit ends focused-onboarding mode; the tab bar
       // appears from here on. Idempotent on subsequent submits.

@@ -31,13 +31,17 @@ export async function generateQuestions(topic: string): Promise<string[]> {
   return data.questions;
 }
 
+export interface SubmitPodcastArgs {
+  topic: string;
+  clarifyingAnswers?: Array<{ q: string; a: string }>;
+  parentPodcastId?: string;
+  sourceChapterTitle?: string;
+}
+
 export async function submitPodcast(
-  topic: string,
-  clarifyingAnswers: Array<{ q: string; a: string }>,
-): Promise<{ podcastId: string }> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  args: SubmitPodcastArgs,
+): Promise<{ podcastId: string; status: "queued" | "exists" }> {
+  const { data: { session } } = await supabase.auth.getSession();
 
   const response = await fetch(`${API_URL}/api/submit-podcast`, {
     method: "POST",
@@ -45,13 +49,20 @@ export async function submitPodcast(
       "Content-Type": "application/json",
       Authorization: `Bearer ${session?.access_token}`,
     },
-    body: JSON.stringify({ topic, clarifyingAnswers }),
+    body: JSON.stringify(args),
   });
+
+  // 409 = expansion already exists; not an error — caller navigates to existing
+  if (response.status === 409) {
+    const { podcastId } = await response.json();
+    return { podcastId, status: "exists" };
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => null);
-    throw new Error(error?.error || "Failed to submit podcast");
+    throw new Error(error?.error ?? "Failed to submit podcast");
   }
 
-  return response.json();
+  const { podcastId } = await response.json();
+  return { podcastId, status: "queued" };
 }
