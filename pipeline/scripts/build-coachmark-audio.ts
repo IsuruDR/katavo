@@ -68,8 +68,11 @@ async function generateOne(voice: string): Promise<void> {
 
   // 2. Apply loudnorm to match Gemini's typical output level.
   //    Target: -16 LUFS integrated, true peak -1.5 dBTP, LRA 11.
+  //    -ar 24000 -ac 1 forces 24kHz mono output to match ttsGemini.ts chunk
+  //    encoding — loudnorm upsamples to 48kHz by default which causes a sample
+  //    rate mismatch when the concat list mixes coach-mark and TTS chunks.
   execSync(
-    `ffmpeg -i "${tmpUnnormMp3}" -af "loudnorm=I=-16:TP=-1.5:LRA=11" -codec:a libmp3lame -qscale:a 2 "${outPath}" -y`,
+    `ffmpeg -i "${tmpUnnormMp3}" -af "loudnorm=I=-16:TP=-1.5:LRA=11" -ar 24000 -ac 1 -codec:a libmp3lame -qscale:a 2 "${outPath}" -y`,
     { stdio: "pipe" },
   );
 
