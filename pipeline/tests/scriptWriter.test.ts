@@ -172,3 +172,55 @@ But researchers aren't idle...
     expect(result.errorMessage).toContain("moderation");
   });
 });
+
+describe("scriptWriter expansion mode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses SCRIPT_WRITER_EXPANSION_PROMPT when parentPodcastId set", async () => {
+    const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
+      (await import("openai")) as any;
+
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "[CHAPTER: A]\nExpansion content." } }],
+    });
+    mockModCreate.mockResolvedValue({ results: [{ flagged: false }] });
+
+    await scriptWriter({
+      podcastId: "p1",
+      userId: "u1",
+      parentPodcastId: "parent",
+      sourceChapterTitle: "Why fast",
+      parentChapterTranscript: "We discussed X.",
+      researchDocument: { sections: [{ title: "T", content: "C" }] },
+      sources: [],
+    } as any);
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const systemPrompt = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(systemPrompt).toContain("CONTINUATION");
+    expect(systemPrompt).toContain("Source chapter title: Why fast");
+    expect(systemPrompt).toContain("We discussed X");
+  });
+
+  it("uses SCRIPT_WRITER_PROMPT when parentPodcastId null", async () => {
+    const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
+      (await import("openai")) as any;
+
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "[CHAPTER: A]\nNormal." } }],
+    });
+    mockModCreate.mockResolvedValue({ results: [{ flagged: false }] });
+
+    await scriptWriter({
+      podcastId: "p1",
+      researchDocument: { sections: [{ title: "T", content: "C" }] },
+      sources: [],
+      parentPodcastId: null,
+    } as any);
+
+    const systemPrompt = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(systemPrompt).not.toContain("CONTINUATION");
+  });
+});

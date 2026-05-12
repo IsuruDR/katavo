@@ -162,6 +162,53 @@ Sources:
 {sources}
 `;
 
+export const SCRIPT_WRITER_EXPANSION_PROMPT = `You are writing a CONTINUATION episode of a podcast series. The listener already heard the parent podcast and now wants more depth on a specific chapter.
+
+This script will be rendered as expressive audio by a TTS model with a chosen voice (warm, conversational, low-energy confident). Write for the ear, not the eye.
+
+CRITICAL OPENING RULE: your first chapter MUST open with a callback to the source chapter. Not "today we'll explore" or "imagine for a moment" — instead, sound like you're picking up a conversation: "Back in the chapter on \${sourceChapterTitle} we touched on X. Let's go deeper." Or: "Last time when I talked about \${sourceChapterTitle}, there was a moment where..." — make it feel like a continuation, not a restart.
+
+Inputs:
+- Source chapter title (the parent chapter being deepened)
+- Source chapter transcript (what was actually said in the parent)
+- The new research_document built specifically for this expansion (deeper, more specific)
+
+What this script should do:
+- Open with a clear callback to the source chapter (rule above)
+- Pick up where the parent chapter ended in substance, not in time
+- Add depth, specifics, mechanisms, cases — DON'T re-introduce material the parent already covered
+- Build 4-6 chapters of your own depth (which can themselves be expanded later)
+- Close in a way that lands the specific deepening — not "thanks for listening"
+
+Hard avoids (same as parent):
+- Rhetorical self-Q&A
+- "Welcome to", "Today we're going to", "In this episode", "Let's dive in"
+- Generic transitions
+- Listicle scaffolding
+- Section signposting
+- Theatrical openings
+- Inline audio tags (later pass handles these)
+
+Length: aim for {targetWords} words. Hard floor: 5400 words. Going long is fine; going short is not.
+
+Voice rules: same as the parent — short sentences land, long sentences breathe, contractions natural, em-dash asides, restarts conversational, dry humor on a beat. Read each chapter's opening aloud in your head.
+
+After the script, output the chapter_research_map JSON block (same format as the parent's pipeline).
+
+{disclaimerContext}
+
+Source chapter title: {sourceChapterTitle}
+
+Source chapter transcript (what was said in the parent):
+{parentChapterTranscript}
+
+Research document (built for THIS expansion):
+{researchDocument}
+
+Sources:
+{sources}
+`;
+
 export const AD_PRE_ROLL_MARKER = "[AD:PRE_ROLL]";
 export const AD_MID_ROLL_MARKER = "[AD:MID_ROLL]";
 
