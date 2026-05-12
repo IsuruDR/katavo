@@ -32,6 +32,15 @@ export const PipelineState = Annotation.Root({
   researchIterations: Annotation<number>,
   voice: Annotation<string | null>,
 
+  // Expansion mode — null on new-podcast generation, set when parent
+  // submission produces a continuation episode.
+  parentPodcastId: Annotation<string | null>,
+  sourceChapterTitle: Annotation<string | null>,
+  parentResearchDigest: Annotation<string | null>,
+  parentResearchDocument: Annotation<Record<string, unknown> | null>,
+  parentChapterTranscript: Annotation<string | null>,
+  hasUsedExpand: Annotation<boolean>,
+
   // Script phase
   script: Annotation<string>,
   taggedScript: Annotation<string>,
@@ -72,6 +81,12 @@ export function makeInitialState(overrides: Partial<PipelineStateType>): Pipelin
     credibilityReport: "",
     researchIterations: 0,
     voice: null,
+    parentPodcastId: null,
+    sourceChapterTitle: null,
+    parentResearchDigest: null,
+    parentResearchDocument: null,
+    parentChapterTranscript: null,
+    hasUsedExpand: false,
     script: "",
     taggedScript: "",
     chapterResearchMap: null,

@@ -32,4 +32,33 @@ describe("PipelineState", () => {
     const state = makeInitialState({ chapterResearchMap: map });
     expect(state.chapterResearchMap).toEqual(map);
   });
+
+  it("defaults expansion-mode fields to null/false on new podcast", () => {
+    const state = makeInitialState({
+      podcastId: "p1",
+      userId: "u1",
+      topic: "x",
+    });
+    expect(state.parentPodcastId).toBeNull();
+    expect(state.sourceChapterTitle).toBeNull();
+    expect(state.parentResearchDigest).toBeNull();
+    expect(state.parentResearchDocument).toBeNull();
+    expect(state.parentChapterTranscript).toBeNull();
+    expect(state.hasUsedExpand).toBe(false);
+  });
+
+  it("accepts expansion-mode fields via overrides", () => {
+    const state = makeInitialState({
+      podcastId: "p2",
+      parentPodcastId: "p-parent",
+      sourceChapterTitle: "Why fast",
+      parentResearchDigest: "digest text",
+      parentResearchDocument: { sections: [] },
+      parentChapterTranscript: "chapter text",
+      hasUsedExpand: true,
+    });
+    expect(state.parentPodcastId).toBe("p-parent");
+    expect(state.sourceChapterTitle).toBe("Why fast");
+    expect(state.hasUsedExpand).toBe(true);
+  });
 });
