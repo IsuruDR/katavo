@@ -18,6 +18,11 @@ import { Hono } from "hono";
 import { createClient } from "@supabase/supabase-js";
 import { userAuth } from "../middleware/auth.js";
 import type { JobManager } from "../jobs/jobManager.js";
+import {
+  fetchParentContext,
+  buildResearchDigest,
+  type ParentContext,
+} from "../lib/parentContext.js";
 
 const route = new Hono();
 
@@ -28,53 +33,6 @@ const route = new Hono();
 let jobManager: JobManager;
 export function setJobManager(jm: JobManager): void {
   jobManager = jm;
-}
-
-interface ParentContext {
-  topic: string;
-  chapter_markers: Array<{ timestampSeconds: number; title: string }>;
-  chapter_transcripts: Record<string, string> | null;
-  research_document: Record<string, unknown>;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchParentContext(
-  serviceClient: any,
-  parentId: string,
-  userId: string,
-): Promise<ParentContext | null> {
-  const { data, error } = await serviceClient
-    .from("podcasts")
-    .select("user_id, topic, chapter_markers, chapter_transcripts, research_contexts(research_document)")
-    .eq("id", parentId)
-    .is("deleted_at", null)
-    .single() as { data: any; error: any };
-  if (error || !data) return null;
-  if (data.user_id !== userId) return null;
-  const researchDoc =
-    (Array.isArray(data.research_contexts)
-      ? data.research_contexts[0]?.research_document
-      : data.research_contexts?.research_document) ?? {};
-  return {
-    topic: data.topic,
-    chapter_markers: data.chapter_markers ?? [],
-    chapter_transcripts: data.chapter_transcripts ?? null,
-    research_document: researchDoc,
-  };
-}
-
-function buildResearchDigest(researchDocument: Record<string, unknown>): string {
-  const sections = (researchDocument as any).sections;
-  if (!Array.isArray(sections) || sections.length === 0) return "(no parent research available)";
-  return sections
-    .map((s: any) => {
-      const title = String(s.title ?? "");
-      const firstSentence = String(s.content ?? "")
-        .split(/(?<=[.!?])\s/)[0]
-        .slice(0, 240);
-      return `- ${title}: ${firstSentence}`;
-    })
-    .join("\n");
 }
 
 route.post("/", userAuth, async (c) => {
@@ -232,7 +190,34 @@ route.post("/", userAuth, async (c) => {
       .select()
       .single();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      // Unique-index race on (parent_podcast_id, source_chapter_title):
+      // two concurrent submits for the same chapter — the first wins,
+      // the second hits idx_podcasts_unique_expansion. Refund the credit,
+      // look up the winner, and return 409 like the pre-INSERT idempotency check.
+      if (insertError.code === "23505" && isExpansion) {
+        // Refund: increment credits_remaining (best-effort — if this fails
+        // we still need to surface the 409 cleanly).
+        await serviceClient
+          .from("subscriptions")
+          .update({ credits_remaining: updatedSub.credits_remaining + 1 })
+          .eq("user_id", user.id);
+        const { data: winner } = await serviceClient
+          .from("podcasts")
+          .select("id")
+          .eq("parent_podcast_id", parentPodcastId!)
+          .eq("source_chapter_title", sourceChapterTitle!)
+          .is("deleted_at", null)
+          .maybeSingle();
+        if (winner) {
+          return c.json({ podcastId: winner.id, status: "exists" }, 409);
+        }
+        // Winner not found (extremely unlikely — would mean the row was
+        // deleted between insert-fail and this select). Fall through to
+        // the generic error path.
+      }
+      throw insertError;
+    }
 
     // Record credit transaction
     await serviceClient.from("credit_transactions").insert({
