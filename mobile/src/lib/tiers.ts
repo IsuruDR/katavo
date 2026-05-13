@@ -100,12 +100,13 @@ export function getDirection(from: Tier, to: Tier): Direction {
  * Add new features here when they're introduced; UpgradeRow and any
  * future banner / pill variants pick up the new entry automatically.
  */
-export type LockableFeature = "deepDive" | "noAds" | "cheaperCredits";
+export type LockableFeature = "deepDive" | "noAds" | "cheaperCredits" | "research";
 
 export const FEATURE_MIN_TIER: Record<LockableFeature, Tier> = {
   deepDive: "plus",
   noAds: "plus",
   cheaperCredits: "plus",
+  research: "plus",
 };
 
 export function isFeatureUnlocked(
