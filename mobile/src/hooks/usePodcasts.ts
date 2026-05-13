@@ -1,6 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "./useAuth";
+import {
+  clearPending,
+  getPending,
+  subscribePending,
+} from "../state/pendingPodcasts";
 
 /** Raw shape from Supabase (snake_case DB columns).
  *
@@ -22,7 +27,7 @@ export interface PodcastRow {
   status_started_at: string | null;
   parent_podcast_id: string | null;
   source_chapter_title: string | null;
-  parent: { topic: string } | null;
+  clarifying_answers: Array<{ q: string; a: string }> | null;
 }
 
 /** App-level type — camelCase to match TypeScript pipeline conventions */
@@ -40,7 +45,7 @@ export interface Podcast {
   statusStartedAt: string | null;
   parentPodcastId: string | null;
   sourceChapterTitle: string | null;
-  parentTopic: string | null;
+  clarifyingAnswers: Array<{ q: string; a: string }>;
 }
 
 export function toPodcast(row: PodcastRow): Podcast {
@@ -61,7 +66,7 @@ export function toPodcast(row: PodcastRow): Podcast {
     statusStartedAt: row.status_started_at ?? row.created_at,
     parentPodcastId: row.parent_podcast_id,
     sourceChapterTitle: row.source_chapter_title,
-    parentTopic: row.parent?.topic ?? null,
+    clarifyingAnswers: row.clarifying_answers ?? [],
   };
 }
 
@@ -73,6 +78,25 @@ export function usePodcasts() {
   // Optimistically deleted rows kept around for the undo window so restore()
   // can re-insert without a network round-trip.
   const pendingDeletes = useRef(new Map<string, Podcast>()).current;
+  // Optimistically inserted rows pushed by Generate the moment submitPodcast
+  // resolves. Cleared once the matching server row appears via realtime
+  // INSERT or refetch.
+  const [pendingInserts, setPendingInserts] = useState<Podcast[]>(() =>
+    getPending(),
+  );
+
+  useEffect(() => {
+    const unsub = subscribePending(() => setPendingInserts(getPending()));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (pendingInserts.length === 0) return;
+    const serverIds = new Set(podcasts.map((p) => p.id));
+    for (const p of pendingInserts) {
+      if (serverIds.has(p.id)) clearPending(p.id);
+    }
+  }, [podcasts, pendingInserts]);
 
   const fetchPodcasts = useCallback(async () => {
     if (!user) {
@@ -81,16 +105,20 @@ export function usePodcasts() {
       return;
     }
     try {
+      // Library renders parents only. Expansions live inside their
+      // parent's chapter list — the cascade trigger on `deleted_at`
+      // (migration 00021) ensures expansions are gone whenever the
+      // parent is, so we never need to surface orphans.
       const { data, error } = await supabase
         .from("podcasts")
         .select(`
           id, topic, status, audio_url, cover_url, duration_seconds, chapter_markers,
           has_ads, created_at, error_message, status_started_at,
-          parent_podcast_id, source_chapter_title,
-          parent:parent_podcast_id (topic)
+          parent_podcast_id, source_chapter_title, clarifying_answers
         `)
         .eq("user_id", user.id)
         .is("deleted_at", null)
+        .is("parent_podcast_id", null)
         .order("created_at", { ascending: false });
 
       if (!error && data) {
@@ -119,15 +147,15 @@ export function usePodcasts() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
+          // Library renders parents only; expansion updates never match
+          // a row in our list. Short-circuit so the no-op map doesn't run.
+          if (payload.new.parent_podcast_id) return;
           setPodcasts((prev) =>
-            prev.map((p) => {
-              if (p.id !== payload.new.id) return p;
-              const updated = toPodcast(payload.new as PodcastRow);
-              // Realtime payloads don't include joined relations; preserve the
-              // resolved parentTopic from our last fetch so the subtitle doesn't
-              // flicker to null on status updates.
-              return { ...updated, parentTopic: p.parentTopic ?? updated.parentTopic };
-            })
+            prev.map((p) =>
+              p.id === payload.new.id
+                ? toPodcast(payload.new as PodcastRow)
+                : p,
+            ),
           );
         }
       )
@@ -140,6 +168,8 @@ export function usePodcasts() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
+          // Expansion INSERTs would be a nested row, not a library entry.
+          if (payload.new.parent_podcast_id) return;
           setPodcasts((prev) => [toPodcast(payload.new as PodcastRow), ...prev]);
         }
       )
@@ -192,5 +222,25 @@ export function usePodcasts() {
     [pendingDeletes],
   );
 
-  return { podcasts, loading, refreshing, refresh, softDelete, restore };
+  // Merge optimistic rows ahead of server rows, deduped by id (server wins).
+  // Sort by createdAt desc so a fresh optimistic row sits at the top until
+  // the server row replaces it.
+  const visiblePodcasts = useMemo(() => {
+    if (pendingInserts.length === 0) return podcasts;
+    const serverIds = new Set(podcasts.map((p) => p.id));
+    const fresh = pendingInserts.filter((p) => !serverIds.has(p.id));
+    if (fresh.length === 0) return podcasts;
+    const merged = [...fresh, ...podcasts];
+    merged.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return merged;
+  }, [podcasts, pendingInserts]);
+
+  return {
+    podcasts: visiblePodcasts,
+    loading,
+    refreshing,
+    refresh,
+    softDelete,
+    restore,
+  };
 }

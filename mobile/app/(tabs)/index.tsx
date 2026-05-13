@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { usePodcasts } from "../../src/hooks/usePodcasts";
 import type { Podcast } from "../../src/hooks/usePodcasts";
 import {
@@ -17,6 +18,7 @@ import { PodcastRow } from "../../src/components/PodcastRow";
 import { SearchField } from "../../src/components/SearchField";
 import { UndoBanner } from "../../src/components/UndoBanner";
 import { PodcastActionSheet } from "../../src/components/PodcastActionSheet";
+import { submitPodcast } from "../../src/services/podcast";
 import { color, space, text } from "../../src/theme/tokens";
 
 const SEARCH_THRESHOLD = 8;
@@ -32,6 +34,17 @@ export default function Library() {
     softDelete,
     restore,
   });
+
+  // Safety net for a missed realtime INSERT: when the user lands on the
+  // Library tab after submitting on Generate, refetch so the new row
+  // appears within one round-trip even if realtime lagged. Optimistic
+  // emit (Generate → pendingPodcasts → usePodcasts) is the primary path;
+  // this is belt-and-braces.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
 
   const showSearch = podcasts.length >= SEARCH_THRESHOLD;
 
@@ -58,6 +71,22 @@ export default function Library() {
     requestDelete({ id: podcast.id, topic: podcast.topic });
   };
 
+  // Tap on a failed row re-submits the same topic + clarifying answers.
+  // On success, soft-delete the failed row so the library shows just the
+  // fresh queued attempt at top. On submit failure, leave the failed row
+  // visible so the user can try again or surface the error.
+  const handleRetry = async (podcast: Podcast) => {
+    try {
+      await submitPodcast({
+        topic: podcast.topic,
+        clarifyingAnswers: podcast.clarifyingAnswers,
+      });
+      await softDelete(podcast.id);
+    } catch (err) {
+      console.warn("[Library] retry submit failed:", err);
+    }
+  };
+
   const handleSheetDelete = () => {
     if (!actionTarget) return;
     const target = actionTarget;
@@ -82,6 +111,7 @@ export default function Library() {
               podcast={item}
               onRequestDelete={handleRequestDelete}
               onLongPress={(p) => setActionTarget(p)}
+              onRetry={handleRetry}
             />
           )}
           ItemSeparatorComponent={Divider}

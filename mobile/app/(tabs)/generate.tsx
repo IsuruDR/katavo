@@ -32,6 +32,7 @@ import {
   generateQuestions,
   submitPodcast,
 } from "../../src/services/podcast";
+import { emitPending } from "../../src/state/pendingPodcasts";
 import { color, font, space, text } from "../../src/theme/tokens";
 
 type Phase = "input" | "loading-questions" | "clarifying" | "submitting";
@@ -73,7 +74,32 @@ export default function Generate() {
     setError(null);
     setPhase("submitting");
     try {
-      await submitPodcast({ topic: topic.trim(), clarifyingAnswers: answers });
+      const trimmedTopic = topic.trim();
+      const { podcastId } = await submitPodcast({
+        topic: trimmedTopic,
+        clarifyingAnswers: answers,
+      });
+      // Optimistic insert into Library so the row appears the moment the
+      // user lands there — no waiting for Supabase realtime INSERT to
+      // propagate. Library's usePodcasts clears this entry once the real
+      // row arrives via realtime or refetch.
+      const now = new Date().toISOString();
+      emitPending({
+        id: podcastId,
+        topic: trimmedTopic,
+        status: "queued",
+        audioUrl: null,
+        coverUrl: null,
+        durationSeconds: null,
+        chapterMarkers: [],
+        hasAds: false,
+        createdAt: now,
+        errorMessage: null,
+        statusStartedAt: now,
+        parentPodcastId: null,
+        sourceChapterTitle: null,
+        clarifyingAnswers: answers,
+      });
       refreshSub();
       // First successful submit ends focused-onboarding mode; the tab bar
       // appears from here on. Idempotent on subsequent submits.

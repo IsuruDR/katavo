@@ -8,7 +8,7 @@
  *
  * Tap behavior:
  *   complete  -> /player/[id]
- *   failed    -> /(tabs)/generate (prefill wiring lands in Generate craft pass)
+ *   failed    -> onRetry callback (re-submits same topic + answers; library soft-deletes the failed row)
  *   in-flight -> no-op (status already visible)
  *
  * Destructive affordances:
@@ -32,13 +32,22 @@ import {
 import { useRouter } from "expo-router";
 import type { Podcast } from "../hooks/usePodcasts";
 import { color, font, motion, space, text } from "../theme/tokens";
-import { formatStageDuration, getStatusMeta } from "../lib/podcastStatus";
+import {
+  formatStageDuration,
+  getCompletedSteps,
+  getStatusMeta,
+  TOTAL_WORK_STEPS,
+} from "../lib/podcastStatus";
 import { usePlayingPodcast } from "../state/PlayingPodcastContext";
+import { StepDots } from "./StepDots";
 
 interface Props {
   podcast: Podcast;
   onRequestDelete?: (podcast: Podcast) => void;
   onLongPress?: (podcast: Podcast) => void;
+  /** Called when a failed row is tapped. Re-submits the same topic +
+   *  clarifying answers, then soft-deletes the failed row. */
+  onRetry?: (podcast: Podcast) => void;
 }
 
 const REVEAL_WIDTH = 104;
@@ -69,6 +78,7 @@ export function PodcastRow({
   podcast,
   onRequestDelete,
   onLongPress,
+  onRetry,
 }: Props) {
   const router = useRouter();
   const { load } = usePlayingPodcast();
@@ -205,7 +215,7 @@ export function PodcastRow({
       }
       router.push(`/player/${podcast.id}`);
     } else if (isFailed) {
-      router.push("/(tabs)/generate");
+      onRetry?.(podcast);
     }
   };
 
@@ -237,6 +247,10 @@ export function PodcastRow({
       ? color.accent
       : "transparent";
 
+  const workingElapsed = meta.isWorking
+    ? formatStageDuration(podcast.statusStartedAt)
+    : null;
+
   const metadataParts = (() => {
     if (isReady && podcast.durationSeconds != null) {
       const minutes = Math.max(1, Math.round(podcast.durationSeconds / 60));
@@ -253,8 +267,7 @@ export function PodcastRow({
       return ["Refunded", "tap to try again"];
     }
     if (meta.isWorking) {
-      const elapsed = formatStageDuration(podcast.statusStartedAt);
-      return elapsed ? [meta.label, elapsed] : [meta.label];
+      return workingElapsed ? [meta.label, workingElapsed] : [meta.label];
     }
     return [meta.label];
   })();
@@ -310,14 +323,20 @@ export function PodcastRow({
               <Text style={styles.topic} numberOfLines={2}>
                 {podcast.topic}
               </Text>
-              {podcast.parentPodcastId && podcast.sourceChapterTitle && (
-                <Text style={styles.subtitle} numberOfLines={1}>
-                  {podcast.parentTopic
-                    ? `from "${podcast.parentTopic}" · chapter ${podcast.sourceChapterTitle}`
-                    : `from a deleted podcast · chapter ${podcast.sourceChapterTitle}`}
-                </Text>
+              {meta.isWorking ? (
+                <View style={styles.metadataRow}>
+                  <Text style={metadataStyle}>{meta.label}</Text>
+                  <StepDots
+                    totalSteps={TOTAL_WORK_STEPS}
+                    completedSteps={getCompletedSteps(podcast.status)}
+                  />
+                  {workingElapsed && (
+                    <Text style={metadataStyle}>· {workingElapsed}</Text>
+                  )}
+                </View>
+              ) : (
+                <Text style={metadataStyle}>{metadataParts.join(" · ")}</Text>
               )}
-              <Text style={metadataStyle}>{metadataParts.join(" · ")}</Text>
             </View>
           </View>
         </Pressable>
@@ -378,15 +397,14 @@ const styles = StyleSheet.create({
   topic: {
     ...text.titleSerif,
   },
-  subtitle: {
-    ...text.bodySmall,
-    color: color.inkSecondary,
-    fontSize: 12,
-    marginTop: space.xxs,
-  },
   metadata: {
     ...text.bodySmall,
     color: color.inkSecondary,
+  },
+  metadataRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.xs,
   },
   metadataWorking: {
     ...text.bodySmall,
