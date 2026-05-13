@@ -196,7 +196,7 @@ The pipeline uses the existing service-role client (`process.env.SUPABASE_SERVIC
 
 ### Page structure
 
-Single HTML template string. No JS framework. ~150 lines including styles.
+Single HTML template string. No JS framework. ~150 lines including styles. All user-supplied values (topic, chapter titles) are HTML-escaped before interpolation to prevent XSS; the `window.__EPISODES__` JSON blob is serialized with `JSON.stringify(...).replace(/</g, "\\u003c")` so a closing `</script>` cannot break out of the inline `<script>`. `window.__EPISODES__` is built server-side from the same signed-URL pass as the root audio, so episode-swap targets are valid for the same 1-hour TTL window.
 
 ```
 <!doctype html>
@@ -395,6 +395,7 @@ The mobile app reads the share base from env (see the share invocation snippet a
 
 - **Custom domain.** Once Katavo points a custom domain at Railway (e.g. `katavo.co`), update `EXPO_PUBLIC_SHARE_BASE_URL` in EAS and cut a new build. `EXPO_PUBLIC_*` vars are baked at build time, so a new build is required. Existing share tokens keep working since the route path doesn't change.
 - **Static assets.** OG image and store badges live under `pipeline/public/og/`. The server mounts `serveStatic({ root: "./public" })` at `/og/*`, so `/og/default.png`, `/og/app-store.svg`, `/og/play-store.svg` are publicly fetchable. `serveStatic` comes from `@hono/node-server/serve-static`, already a dependency.
+- **CWD assumption for `serveStatic`.** The middleware resolves `root` against the process working directory (`@hono/node-server` does not accept absolute paths). Today both `npm start` and `tsx watch` are invoked from the `pipeline/` package root, so `./public` resolves correctly. If Railway's start command ever moves the CWD (e.g. `cd dist && node server.js`), static assets 404 silently. Keep `pipeline/` as the start CWD.
 - **Migration number.** 00022 is next at the time of writing (00021 was the cascade soft-delete migration). Verify before applying.
 - **CDN.** Railway does not currently proxy through a CDN. If we add one, set an explicit `no-store` override there since signed URLs in the body cannot be CDN-cached.
 
@@ -417,7 +418,7 @@ The mobile app reads the share base from env (see the share invocation snippet a
 - 404 for an unknown token.
 - 404 for a soft-deleted podcast.
 - 404 for an in-flight (status != complete) podcast.
-- Renders a `<source>` element with a signed Supabase URL.
+- Renders an `<audio>` element whose `src` attribute is a signed Supabase URL pointing at the `podcast-audio` bucket.
 - Renders a "More from this series" section when the parent has descendants.
 - OG meta tags include topic and (when available) signed cover URL.
 - **Cross-user**: Route works for a podcast whose `user_id` is not the test runner's auth context. Catches anon-key mis-wires.
@@ -435,7 +436,7 @@ The mobile harness still has no test framework. ShareNavRow has no unit test for
 |---|---|
 | Token collision via simultaneous double-tap | Unique partial index enforces failure. The issue-token endpoint is idempotent: if `share_token` is already set, the existing token is returned without re-issuing. |
 | User pastes share link in a public space where they don't want the topic visible | NavRow subtitle says "Audio and chapters become public" before the share sheet opens. Topic is in the page title and OG tags by design. |
-| Signed audio URL exhausted mid-listen | 1-hour TTL is much longer than a single listening session. If a recipient pauses for hours and resumes, the URL may need a refresh; the page reload handles it. |
+| Signed audio URL exhausted mid-listen | 1-hour TTL is much longer than a single listening session. If a recipient pauses for hours and resumes, the browser surfaces a generic playback error; refreshing the page re-signs and play resumes. |
 | Search engine indexes share URLs | URLs are unguessable; `<meta robots noindex>` is belt-and-braces. |
 | Owner wants to unshare but the model doesn't support it | Out of scope for v1. We graduate to revoke later if demand surfaces. |
 | Cover URLs leak via OG previews | The user shared the link knowing it's public; covered by the NavRow subtitle. |
