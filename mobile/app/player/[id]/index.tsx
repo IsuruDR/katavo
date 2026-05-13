@@ -18,24 +18,25 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { supabase } from "../../src/lib/supabase";
-import { usePlayer } from "../../src/hooks/usePlayer";
-import { useSubscription } from "../../src/hooks/useSubscription";
-import { AudioPlayer } from "../../src/components/AudioPlayer";
-import { ChapterMarkers } from "../../src/components/ChapterMarkers";
-import { DiveBar } from "../../src/components/DiveBar";
-import { ExpandActionSheet } from "../../src/components/ExpandActionSheet";
-import { ExpansionQueuedSheet } from "../../src/components/ExpansionQueuedSheet";
-import { LoadingOverlay } from "../../src/components/LoadingOverlay";
-import { PurchaseFailureSheet } from "../../src/components/PurchaseFailureSheet";
-import type { SwitchFailure } from "../../src/lib/switchErrors";
+import { supabase } from "../../../src/lib/supabase";
+import { usePlayer } from "../../../src/hooks/usePlayer";
+import { useSubscription } from "../../../src/hooks/useSubscription";
+import { AudioPlayer } from "../../../src/components/AudioPlayer";
+import { ChapterMarkers } from "../../../src/components/ChapterMarkers";
+import { ResearchNavRow } from "../../../src/components/ResearchNavRow";
+import { DiveBar } from "../../../src/components/DiveBar";
+import { ExpandActionSheet } from "../../../src/components/ExpandActionSheet";
+import { ExpansionQueuedSheet } from "../../../src/components/ExpansionQueuedSheet";
+import { LoadingOverlay } from "../../../src/components/LoadingOverlay";
+import { PurchaseFailureSheet } from "../../../src/components/PurchaseFailureSheet";
+import type { SwitchFailure } from "../../../src/lib/switchErrors";
 import {
   toPodcast,
   type Podcast,
   type PodcastRow,
-} from "../../src/hooks/usePodcasts";
-import { usePlayingPodcast } from "../../src/state/PlayingPodcastContext";
-import { color, font, layout, space, text } from "../../src/theme/tokens";
+} from "../../../src/hooks/usePodcasts";
+import { usePlayingPodcast } from "../../../src/state/PlayingPodcastContext";
+import { color, font, layout, space, text } from "../../../src/theme/tokens";
 
 export default function PlayerScreen() {
   const { id, expand } = useLocalSearchParams<{ id: string; expand?: string }>();
@@ -255,6 +256,10 @@ export default function PlayerScreen() {
               endReached={hasReachedEnd}
             />
           )}
+          <ResearchNavRow
+            podcastId={String(id)}
+            podcastStatus={podcast.status}
+          />
         </ScrollView>
 
         {SHOW_DEEP_DIVE && currentChapter && (
