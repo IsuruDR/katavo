@@ -127,7 +127,6 @@ export default function ResearchScreen() {
 
         {data && grouped === null && (
           <View>
-            <Text style={styles.fallbackEyebrow}>Chapter mapping unavailable</Text>
             {data.researchDocument.sections.map((s, i) => (
               <ResearchChapterSection
                 key={i}
@@ -223,14 +222,6 @@ const styles = StyleSheet.create({
     ...text.body,
     color: color.inkSecondary,
     paddingVertical: space.lg,
-  },
-  fallbackEyebrow: {
-    fontFamily: font.sansSemiBold,
-    fontSize: 11,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    color: color.inkSecondary,
-    marginBottom: space.sm,
   },
   gapsBlock: {
     marginTop: space.xxl,
