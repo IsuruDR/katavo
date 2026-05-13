@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { ChatOpenAI } from "@langchain/openai";
 import { BRIEF_BUILDER_PROMPT, BRIEF_BUILDER_EXPANSION_PROMPT } from "../config.js";
+import { getVoicePersonality } from "../voicePersonality.js";
 import { persistStatus } from "./persistStatus.js";
 import type { PipelineStateType } from "../state.js";
 
@@ -26,19 +27,20 @@ export async function briefBuilder(
   const isExpansion = !!state.parentPodcastId;
   const model = new ChatOpenAI({ modelName: "gpt-4o", maxTokens: 500 });
   const structured = model.withStructuredOutput(BriefSchema, { name: "research_brief" });
+  const { briefAngle } = getVoicePersonality(state.voice);
 
   let systemPrompt: string;
   let userContent: string;
 
   if (isExpansion) {
-    systemPrompt = BRIEF_BUILDER_EXPANSION_PROMPT;
+    systemPrompt = BRIEF_BUILDER_EXPANSION_PROMPT.replace("{voiceAngle}", briefAngle);
     userContent =
       `Parent topic: ${state.topic}\n\n` +
       `Source chapter title: ${state.sourceChapterTitle}\n\n` +
       `Parent research digest:\n${state.parentResearchDigest ?? "(none)"}\n\n` +
       `Source chapter transcript:\n${state.parentChapterTranscript ?? "(none)"}`;
   } else {
-    systemPrompt = BRIEF_BUILDER_PROMPT;
+    systemPrompt = BRIEF_BUILDER_PROMPT.replace("{voiceAngle}", briefAngle);
     const answersText = (state.clarifyingAnswers ?? [])
       .map((a: any) => `Q: ${a.q ?? ""}\nA: ${a.a ?? ""}`)
       .join("\n");

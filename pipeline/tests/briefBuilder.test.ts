@@ -99,4 +99,50 @@ describe("briefBuilder expansion mode", () => {
     expect(messages[0].content).not.toContain("CONTINUATION");
     expect(messages[1].content).toContain("Topic: Octopus cognition");
   });
+
+  it("injects voice angle for the chosen voice in normal mode", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      scope: "x",
+      angle: "y",
+      depth: "intermediate",
+      keyQuestions: ["q1", "q2", "q3"],
+    });
+
+    const { briefBuilder } = await import("../src/podcast_pipeline/nodes/briefBuilder.js");
+    await briefBuilder({
+      podcastId: "p1",
+      userId: "u1",
+      topic: "history of bmw",
+      voice: "Charon",
+      clarifyingAnswers: [{ q: "how technical?", a: "intermediate" }],
+      parentPodcastId: null,
+    } as any);
+
+    const messages = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1][0];
+    expect(messages[0].content).toContain("Voice angle:");
+    expect(messages[0].content).toContain("specifics: numbers, dates");
+    expect(messages[0].content).not.toContain("concrete scenes and lived experience");
+  });
+
+  it("falls back to Sulafat's voice angle when voice is null", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      scope: "x",
+      angle: "y",
+      depth: "intermediate",
+      keyQuestions: ["q1", "q2", "q3"],
+    });
+
+    const { briefBuilder } = await import("../src/podcast_pipeline/nodes/briefBuilder.js");
+    await briefBuilder({
+      podcastId: "p1",
+      userId: "u1",
+      topic: "x",
+      voice: null,
+      clarifyingAnswers: [],
+      parentPodcastId: null,
+    } as any);
+
+    const messages = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1][0];
+    expect(messages[0].content).toContain("concrete scenes and lived experience");
+  });
 });

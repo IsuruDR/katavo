@@ -73,6 +73,8 @@ export const TTS_RETRY_BASE_DELAY_MS = 3000; // 3s, 6s, 12s
 export const BRIEF_BUILDER_PROMPT = `You are preparing a research brief for a podcast episode.
 Given a topic and the user's answers to clarifying questions, produce a structured research brief.
 
+Voice angle: {voiceAngle}
+
 Output a JSON object with:
 - "scope": what the podcast should cover
 - "angle": the specific perspective or framing
@@ -81,6 +83,8 @@ Output a JSON object with:
 `;
 
 export const BRIEF_BUILDER_EXPANSION_PROMPT = `You are preparing a research brief for a CONTINUATION podcast episode that deepens a specific chapter of a parent podcast.
+
+Voice angle: {voiceAngle}
 
 Inputs you'll receive:
 - The parent podcast's topic (broad subject)
