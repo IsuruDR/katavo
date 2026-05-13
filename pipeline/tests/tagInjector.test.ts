@@ -83,6 +83,55 @@ describe("tagInjector", () => {
     const callArg = mockGenerateContent.mock.calls[0][0];
     const prompt = String(callArg.contents);
     expect(prompt).toContain("[laughs]");
-    expect(prompt).toContain("[chuckles]");
+    expect(prompt).toContain("[whispers]");
+  });
+
+  it("injects voice personality summary into the prompt for the chosen voice", async () => {
+    mockGenerateContent.mockResolvedValueOnce({ text: "[CHAPTER: A]\nTagged." });
+
+    const { tagInjector } = await import("../src/podcast_pipeline/nodes/tagInjector.js");
+    await tagInjector({
+      script: "[CHAPTER: A]\nSome prose.",
+      voice: "Charon",
+    } as any);
+
+    const callArg = mockGenerateContent.mock.calls[mockGenerateContent.mock.calls.length - 1][0];
+    const prompt = String(callArg.contents);
+    expect(prompt).toContain("Voice context:");
+    expect(prompt).toContain("Substance-forward");
+    expect(prompt).toContain("Gemini's Charon voice");
+  });
+
+  it("falls back to Sulafat when voice is null", async () => {
+    mockGenerateContent.mockResolvedValueOnce({ text: "[CHAPTER: A]\nTagged." });
+
+    const { tagInjector } = await import("../src/podcast_pipeline/nodes/tagInjector.js");
+    await tagInjector({
+      script: "[CHAPTER: A]\nSome prose.",
+      voice: null,
+    } as any);
+
+    const callArg = mockGenerateContent.mock.calls[mockGenerateContent.mock.calls.length - 1][0];
+    const prompt = String(callArg.contents);
+    expect(prompt).toContain("friendly-knowledgeable-friend");
+    expect(prompt).toContain("Gemini's Sulafat voice");
+  });
+
+  it("preserves the hard-constraint rules in the simplified prompt", async () => {
+    mockGenerateContent.mockResolvedValueOnce({ text: "[CHAPTER: A]\nTagged." });
+
+    const { tagInjector } = await import("../src/podcast_pipeline/nodes/tagInjector.js");
+    await tagInjector({
+      script: "[CHAPTER: A]\nSome prose.",
+      voice: "Sulafat",
+    } as any);
+
+    const callArg = mockGenerateContent.mock.calls[mockGenerateContent.mock.calls.length - 1][0];
+    const prompt = String(callArg.contents);
+    expect(prompt).toContain("Place each tag immediately before");
+    expect(prompt).toContain("Preserve all [CHAPTER: ...] markers verbatim");
+    expect(prompt).toContain("[AD:PRE_ROLL]");
+    expect(prompt).toContain("[AD:MID_ROLL]");
+    expect(prompt).toMatch(/One tag per sentence maximum/);
   });
 });

@@ -1,46 +1,35 @@
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { getGeminiClient } from "../providers/gemini.js";
 import { AUDIO_TAGS, GEMINI_TAG_INJECTOR_MODEL } from "../config.js";
+import { getVoicePersonality } from "../voicePersonality.js";
 import { retryTransient } from "../retry.js";
 import type { PipelineStateType } from "../state.js";
 
 const TAG_INJECTOR_RETRY_ATTEMPTS = 3; // 1 try + 3 retries = 4 attempts total
 const TAG_INJECTOR_RETRY_BASE_MS = 3000; // 3s, 6s, 12s — total worst-case ~21s before fallthrough
 
-const TAG_INJECTOR_PROMPT = (script: string, tags: readonly string[]) => `
-You are inserting audio tags into a podcast script that will be read aloud
-by an expressive TTS model. Without tags the delivery sounds flat; your
-job is to give it the texture of a real person talking — small breaths,
-beats of thought, the occasional aside.
+const TAG_INJECTOR_PROMPT = (
+  script: string,
+  tags: readonly string[],
+  voiceName: string,
+  summary: string,
+  scriptStyle: string,
+) => `You are inserting audio tags into a podcast script that will be read aloud by an expressive TTS model (Gemini's ${voiceName} voice).
+
+Voice context:
+${summary}
+
+${scriptStyle}
+
+The script was written specifically for this voice. Pick tags that reinforce its feel, not fight it.
 
 Available tags: ${tags.map((t) => `[${t}]`).join(", ")}
 
-Density target (lean denser, not sparser):
-- Roughly one tag per 2-3 sentences in conversational passages, asides,
-  reactions, and chapter transitions.
-- Roughly one tag per 3-4 sentences in dense factual passages (citing
-  data, walking through a mechanism) — still tagged, just less.
-- Every chapter opening lands at least one tag in its first 1-2
-  sentences to set tone. Every chapter closing benefits from
-  [pauses] or [thoughtful] on the final beat to let it land.
-- Better to err one tag too many than one too few. A reader skimming
-  the script should see tags on most paragraphs.
+Take the script and insert audio tags from the list above. Place each tag immediately before the phrase or sentence it's meant to influence. Ensure the tag matches the emotional arc of the narrative. Avoid overusing tags. Place them where a natural change in tone or pace would occur. One tag per sentence maximum.
 
-Tag-selection rules:
-- Use the delivery tags ([pauses], [exhales], [chuckles], [thoughtful],
-  [curious], [serious]) freely — they sound natural and add subtle
-  pacing without drawing attention.
-- Reserve the strong-emotion tags ([laughs], [surprised], [whispers],
-  [sighs]) for genuine moments where the sentence actually warrants it.
-  Don't stack [laughs] on every joke or [surprised] on every fact.
-- Insert the tag immediately before the phrase or sentence it influences
-  (e.g., "[chuckles] You'd think they'd have figured it out by then.").
-- One tag per sentence maximum. Never double-tag.
-
-Hard constraints:
-- Do NOT modify the script's text — only insert bracketed tags.
-- Preserve all [CHAPTER: ...] markers verbatim.
-- Preserve any [AD:PRE_ROLL] / [AD:MID_ROLL] markers verbatim.
+Do NOT modify the script's text, only insert bracketed tags.
+Preserve all [CHAPTER: ...] markers verbatim.
+Preserve any [AD:PRE_ROLL] / [AD:MID_ROLL] markers verbatim.
 
 Script:
 ${script}
@@ -62,6 +51,8 @@ export async function tagInjector(
   }
 
   const client = getGeminiClient();
+  const voiceName = state.voice ?? "Sulafat";
+  const { summary, scriptStyle } = getVoicePersonality(state.voice);
 
   let response: { text?: string };
   try {
@@ -69,7 +60,7 @@ export async function tagInjector(
       () =>
         client.models.generateContent({
           model: GEMINI_TAG_INJECTOR_MODEL,
-          contents: TAG_INJECTOR_PROMPT(script, AUDIO_TAGS),
+          contents: TAG_INJECTOR_PROMPT(script, AUDIO_TAGS, voiceName, summary, scriptStyle),
         }) as Promise<{ text?: string }>,
       {
         retries: TAG_INJECTOR_RETRY_ATTEMPTS,
