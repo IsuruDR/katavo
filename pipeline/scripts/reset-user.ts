@@ -12,9 +12,11 @@
  *
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (or .env)
  *
- * Destructive — wipes all the user's podcasts (FK cascade also clears
+ * Destructive: wipes all the user's podcasts (FK cascade also clears
  * research_contexts and qa_sessions), credit_transactions, and resets
- * profile.preferred_voice + expo_push_token to NULL.
+ * profile.preferred_voice + expo_push_token to NULL plus
+ * onboarding_complete + has_used_expand to FALSE so the next app launch
+ * runs onboarding and the first generated podcast plays the coach-mark.
  */
 
 import "dotenv/config";
@@ -59,14 +61,24 @@ async function resetUser(userId: string, tier: Tier): Promise<void> {
   if (txErr) throw new Error(`Delete credit_transactions failed: ${txErr.message}`);
   console.log("  ✓ credit_transactions deleted");
 
-  // Reset profile: clear voice (re-trigger onboarding) + push token (re-prompt iOS).
+  // Reset profile to fresh-signup defaults: clear voice + push token,
+  // flip onboarding_complete + has_used_expand back to false. Matches the
+  // handle_new_user trigger so the next app launch goes through onboarding
+  // and the coach-mark fires on the first generated podcast.
   const { error: profUpdateErr } = await supabase
     .from("profiles")
-    .update({ preferred_voice: null, expo_push_token: null })
+    .update({
+      preferred_voice: null,
+      expo_push_token: null,
+      onboarding_complete: false,
+      has_used_expand: false,
+    })
     .eq("id", userId);
   if (profUpdateErr)
     throw new Error(`Profile reset failed: ${profUpdateErr.message}`);
-  console.log("  ✓ profile reset (preferred_voice + expo_push_token cleared)");
+  console.log(
+    "  ✓ profile reset (voice + push token cleared, onboarding_complete=false, has_used_expand=false)",
+  );
 
   // Reset subscription to fresh free defaults — matches handle_new_user trigger.
   const { error: subErr } = await supabase
