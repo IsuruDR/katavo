@@ -88,12 +88,7 @@ Visual states:
 | Free | "Research · Plus" (accent) | "Sources behind this episode" | chevron | `router.push("/plans")` |
 | Plus / Pro | "Research" | "Sources behind this episode" | chevron | `router.push("/player/{id}/research")` |
 
-Hidden entirely when:
-- The podcast is still in flight (status not `complete`).
-- The podcast is `failed` (failed-row UX already handles "tap to try again").
-- The podcast is a legacy row predating `research_contexts` (no row in `research_contexts` for this podcast id).
-
-The hidden-on-legacy check has to happen at render time. Cheapest path: include a `has_research_context` boolean derived in the existing `usePodcasts` query, OR a join lookup in the player screen's podcast-fetch. We'll add it to the player screen's existing fetch (Section 7).
+Hidden entirely when `podcastStatus` (passed in as a prop from the player screen) is anything other than `complete`. The player screen already holds `podcast` state with the status. ResearchNavRow takes `podcastStatus` and `podcastId` as props; the legacy "no research_contexts row" case is handled by the screen itself (empty state, see Section 6), not by hiding the row. Rationale in Section 7.
 
 ---
 
@@ -139,9 +134,11 @@ Each `[N]` in the content is tappable. Tap → `Linking.openURL(sources[N-1].url
 
 ### Sources scoping
 
-Sources are listed per chapter, drawn from `chapter_research_map[chapterTitle].sourceIndexes`. Numbering is **global** — the `[3]` in chapter 1's prose is the same `[3]` shown in chapter 1's sources subsection, and the same `[3]` would appear in chapter 4's prose and sources subsection if chapter 4 cites the same source.
+Sources are listed per chapter, drawn from `chapter_research_map[chapterTitle].sourceIndexes`. Numbering is **global**. The `[3]` in chapter 1's prose is the same `[3]` shown in chapter 1's sources subsection, and the same `[3]` would appear in chapter 4's prose and sources subsection if chapter 4 cites the same source.
 
-This means a source can appear in multiple chapters' sources subsections. That's deliberate: chapter-scoped grouping with consistent global numbering. Cleaner than one bibliography at the bottom — the user can trace what fed each chapter without scrolling.
+**Implementation note:** the per-chapter sources list preserves the global index. Do NOT renumber to a local 1..N counter per chapter. Render as `[sourceIndex + 1] title / url`, where `sourceIndex` is the position in the global `sources` array. This keeps citation numbers stable across the entire screen and matches the synthesizer's emit format.
+
+This means a source can appear in multiple chapters' sources subsections. That's deliberate: chapter-scoped grouping with consistent global numbering. Cleaner than one bibliography at the bottom, and lets the user trace what fed each chapter without scrolling.
 
 ### Coverage gaps
 
@@ -165,9 +162,11 @@ Surfaces transparency about what the AI's research stage couldn't cover. Doesn't
 
 Add `research: "plus"` to `FEATURE_MIN_TIER` in `mobile/src/lib/tiers.ts`. Same pattern as existing entries (`deepDive`, `noAds`, `cheaperCredits`).
 
-The `ResearchNavRow` reads subscription tier and renders locked-or-unlocked per the table in Surface 1. The research screen itself is also tier-gated server-side via RLS — paid users can read their own `research_contexts` (own-row RLS is already in place from v1).
+The `ResearchNavRow` reads subscription tier and renders locked-or-unlocked per the table in Surface 1.
 
-Free user accidentally deep-linked to `/player/{id}/research`: the screen detects tier on mount, redirects to `/plans` with a small toast "Research is a Plus feature."
+**RLS scope vs tier gate.** Server-side RLS on `research_contexts` enforces *ownership* (own-row only), not tier. A free user CAN technically read their own `research_contexts` rows by hitting Supabase directly. The tier gate is purely client-side: ResearchNavRow won't route a free user to the research screen, and the research screen checks tier on mount and redirects to `/plans` if a free user lands there via deep-link.
+
+Free user accidentally deep-linked to `/player/{id}/research`: the screen detects tier on mount, renders a one-line inline message "Research is a Plus feature." for ~600ms, then `router.replace("/plans")`. No toast library dependency required.
 
 ---
 
@@ -216,14 +215,15 @@ The hook does one Supabase round-trip: `research_contexts` joined with `podcasts
 
 Caching: in-memory map keyed by podcastId, lives in a module-scoped Map. Cleared on signOut. Reads are stale-while-revalidate: return cached immediately if present, then refresh in background. Cache invalidates on a manual `refresh()` call (pull-to-refresh).
 
-The `ResearchNavRow` does NOT need to know whether a `research_contexts` row exists — only the player screen does (for the hide-on-legacy case). Two paths:
+The `ResearchNavRow` does NOT need to know whether a `research_contexts` row exists. Only the screen does, and the screen handles the "Research isn't available" empty state. NavRow always renders when `podcastStatus === "complete"`.
 
-1. **Player screen fetches a lightweight `has_research_context` flag** on the existing podcast fetch (boolean derived from a count query, or just a separate `.from("research_contexts").select("id").eq("podcast_id", id).maybeSingle()`).
-2. **`ResearchNavRow` always renders** when status is complete; the screen handles the "Research isn't available" empty state.
+Risk: free users see the locked NavRow, upgrade to Plus, then discover their (legacy) podcast has no research. Mitigation: legacy podcasts pre-`research_contexts` are zero today. The table has existed since v1; only failed-mid-pipeline rows lack a row, and those rows have status `failed` so the NavRow hides anyway. Acceptable.
 
-Option 2 is simpler. Risk: free users see the locked NavRow and pay for Plus, then discover their (legacy) podcast has no research. Mitigation: legacy podcasts pre-`research_contexts` are zero today (the table existed since v1; only failed-mid-pipeline rows lack it). Acceptable.
+### Cache lifecycle
 
-Going with option 2.
+The module-scoped Map cache needs an explicit clear path on auth signOut. The existing pattern in this codebase doesn't auto-clear module caches on auth state changes. Wire it via the existing `useAuth` provider: add a `useEffect` in the hook's first call that subscribes to `supabase.auth.onAuthStateChange` and clears the cache on `SIGNED_OUT`. Without this, a user-switch on the same device would briefly show the previous user's cached research before RLS-blocked refetches fail.
+
+Failing this wire-up, fallback: don't cache. Re-fetch on every screen mount. Slight perf regression (one extra round-trip per tap) but no data leakage risk. Prefer the auth-clear wiring for v1.
 
 ---
 
@@ -235,10 +235,10 @@ Going with option 2.
 |---|---|
 | `mobile/app/player/[id]/research.tsx` | The research screen route |
 | `mobile/src/components/ResearchNavRow.tsx` | Locked-or-unlocked NavRow component |
-| `mobile/src/components/ResearchChapterSection.tsx` | One chapter's heading + prose + sources block |
-| `mobile/src/components/ResearchCitation.tsx` | Tappable `[N]` inline citation |
+| `mobile/src/components/ResearchChapterSection.tsx` | One chapter's heading + prose + sources block. Owns the `[N]` parsing (regex `/\[(\d+)\]/g` against the content string), emits a sequence of `<Text>` + `<ResearchCitation>` nodes. |
+| `mobile/src/components/ResearchCitation.tsx` | Tappable `[N]` inline citation. Receives `n` and `sourceUrl` as props (already-parsed). Uses `hitSlop` so the small `[N]` glyph is actually tappable. |
 | `mobile/src/components/ResearchSourceRow.tsx` | One source entry with global number + title + URL |
-| `mobile/src/hooks/useResearchContext.ts` | Lazy-fetch + cache hook |
+| `mobile/src/hooks/useResearchContext.ts` | Lazy-fetch + cache hook. Clears module-scoped cache on `supabase.auth.onAuthStateChange === "SIGNED_OUT"`. |
 
 ### Modified
 
@@ -262,13 +262,30 @@ Going with option 2.
 - Returns cached data immediately on second call with same id.
 - Re-fetches when `refresh()` is called.
 - Returns `null` data + non-null error when the query fails.
-- Returns `null` data + `null` error when no row exists (legacy podcast).
+- Returns `null` data + `null` error when no row exists (legacy / failed podcast).
+- **Clears the cache on `SIGNED_OUT` auth event.** Mocked `supabase.auth.onAuthStateChange`; assert subsequent fetch hits the network instead of returning stale.
 
 ### `ResearchNavRow.test.tsx`
 
 - Renders "Research · Plus" eyebrow with chevron when tier is free.
 - Renders plain "Research" eyebrow when tier is plus or pro.
 - onPress routes to `/plans` for free; `/player/{id}/research` for paid.
+- Hides (returns null) when `podcastStatus !== "complete"`.
+
+### `ResearchChapterSection.test.tsx`
+
+- Citation parsing: `parseCitations("Bezzera filed [1] in 1901 [2].")` produces alternating text + citation nodes.
+- Edge cases: `[10]` (multi-digit), `[1][2]` (no space), `[1] [2]` (space separated), `[0]` (invalid 0-index; render as plain text since synthesizer emits 1-indexed only).
+- Chapter sections render without citations when prose contains no `[N]` markers.
+
+### `research.test.tsx` (screen)
+
+- Renders chapter-grouped sections from a mock `ResearchContext`.
+- Renders Coverage gaps footer only when `droppedQuestions.length > 0`.
+- Falls back to a flat section list (no chapter headings) when `chapterResearchMap` is null; shows "Chapter mapping unavailable" eyebrow.
+- Redirects free users via `router.replace("/plans")` on mount.
+
+### Manual smoke (post-deploy)
 
 ### Manual smoke (post-deploy)
 
@@ -284,10 +301,13 @@ Going with option 2.
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| Citation tap opens a broken URL (Tavily returned a dead link) | Medium | `Linking.canOpenURL` check before opening; toast on failure. Acceptable to let the system browser handle 404s. |
-| `chapter_research_map` is null on a podcast (old code path) | Low | Render the research as a flat list of sections without chapter grouping; surface "Chapter mapping unavailable" eyebrow. |
-| Long content makes the screen unwieldy (5400+ word episode → proportional research density) | Medium | Chapter sections collapse-by-default? Not for v1. If problem, ship in v2. |
-| Free user discovers a legacy podcast has no research after upgrading | Low | Only failed-mid-pipeline rows lack research; failed rows already hide the NavRow. Acceptable risk. |
+| Citation tap opens a broken URL (Tavily returned a dead link) | Medium | `Linking.canOpenURL` check before opening; inline error message on failure. Acceptable to let the system browser handle 404s. |
+| `chapter_research_map` is null on a podcast (old code path) | Low | Render the research as a flat list of sections without chapter grouping; surface "Chapter mapping unavailable" eyebrow. Covered by test. |
+| Long content makes the screen unwieldy (5400+ word episode produces proportional research density) | Medium | Single ScrollView, no virtualization in v1. Revisit if real podcasts produce >10k-word research. Chapter sections could collapse-by-default in v2. |
+| Source-count explosion in per-chapter sources subsection | Medium | Some chapters cite 15-20+ sources. Verify with a real generation. If too tall, defer to "View N more sources" expand pattern in v2. |
+| Citation tap target is small (an `[N]` glyph is ~16pt wide) | High | `ResearchCitation` uses `hitSlop` and wraps the Pressable with internal padding so the actual hit area is comfortable. |
+| Module-scoped cache leaks across user-switch | Low | Cache clears on `supabase.auth.onAuthStateChange === "SIGNED_OUT"`. Covered by test. Fallback: drop caching entirely (one fetch per screen mount) if the wiring is fragile. |
+| Free user discovers a legacy podcast has no research after upgrading | Low | Only failed-mid-pipeline rows lack research; failed rows hide the NavRow (status check). Acceptable risk. |
 | Source titles contain prompt-injection text rendered as content | Low | Treat source.title and source.url as untrusted; render with `<Text>` (no HTML rendering anywhere). Already the case. |
 
 ---
@@ -297,7 +317,7 @@ Going with option 2.
 - **Search across all research.** Library-level "find a source" search. Not v1. Each podcast's research is self-contained.
 - **Export to PDF / share.** Plus-tier users might want to download the bibliography. Defer to v2.
 - **Highlighting / annotations.** Read-only for v1. No persistent UI state per user.
-- **Inline audio playback from a research section.** Tap a chapter heading in the research screen → seek the player to that chapter. Tempting, but adds coordination with the persistent PlayingPodcastContext and isn't core to the "show your work" pitch. Defer.
+- **Inline audio playback from a research section.** Tap a chapter heading in the research screen, seek the player to that chapter. Tempting and high-value (research-while-listening is a strong loop), but adds coordination with the persistent PlayingPodcastContext and isn't core to the "show your work" pitch. Flag as the most likely v2 followup if the feature finds traction.
 - **Listing podcasts grouped by source / cross-reference.** "What other podcasts cited example.com?" Cool but out of scope.
 - **Showing the planner / subagent / raw_response data.** That's diagnostics, not user-facing research. Stays in `research_contexts.raw_response` for our own debugging via the diagnostics column.
 
