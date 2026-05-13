@@ -74,7 +74,9 @@ export function getVoicePersonality(
 
 `Record<GeminiVoice, VoicePersonality>` forces all four voices to be defined at compile time. TypeScript fails the build if any are missing.
 
-### Diagram
+### Diagrams
+
+Data flow — which personality field reaches which node:
 
 ```mermaid
 flowchart LR
@@ -89,11 +91,40 @@ flowchart LR
   vp -.voice timbre.-> ap
 ```
 
+Prompt-template surgery — what each prompt looks like before/after:
+
+```mermaid
+flowchart LR
+  subgraph Before
+    BB1["BRIEF_BUILDER_PROMPT<br/>(no voice slot)"]
+    SW1["SCRIPT_WRITER_PROMPT<br/>11-bullet 'Voice rules:'<br/>+ Sulafat preamble"]
+    TI1["TAG_INJECTOR_PROMPT(script, tags)<br/>~40 lines, voice-blind"]
+  end
+  subgraph After
+    BB2["BRIEF_BUILDER_PROMPT<br/>+ '{voiceAngle}' slot"]
+    SW2["SCRIPT_WRITER_PROMPT<br/>3-bullet 'Universal rules:'<br/>+ '{voicePersonality}' slot<br/>+ neutral preamble"]
+    TI2["TAG_INJECTOR_PROMPT(script, tags, voiceName, personality)<br/>~22 lines, voice-aware"]
+  end
+  BB1 --> BB2
+  SW1 --> SW2
+  TI1 --> TI2
+```
+
 ---
 
 ## Section 2: Prompt refactors per node
 
 Approach: **strip voice content out of the generic prompts, inject per-voice content via placeholders.** Generic prompt holds structure and format only. Per-voice content holds tone and personality.
+
+### Injection map
+
+| Prompt | Placeholder | Filled from |
+|---|---|---|
+| BRIEF_BUILDER_PROMPT | `{voiceAngle}` | `personality.briefAngle` |
+| BRIEF_BUILDER_EXPANSION_PROMPT | `{voiceAngle}` | `personality.briefAngle` |
+| SCRIPT_WRITER_PROMPT | `{voicePersonality}` | `personality.summary + "\n\n" + personality.scriptStyle` |
+| SCRIPT_WRITER_EXPANSION_PROMPT | `{voicePersonality}` | same as above |
+| TAG_INJECTOR_PROMPT (function) | `{voiceName}`, `{summary}`, `{scriptStyle}` | passed as args |
 
 ### briefBuilder (both modes)
 
@@ -103,17 +134,46 @@ Approach: **strip voice content out of the generic prompts, inject per-voice con
 Voice angle: {voiceAngle}
 ```
 
-Where `{voiceAngle}` is `VOICE_PERSONALITIES[voice].briefAngle`. Nothing else changes.
+Where `{voiceAngle}` is `VOICE_PERSONALITIES[voice].briefAngle`.
+
+**Wiring note:** `briefBuilder.ts` does not do template substitution today — it passes the prompt constant verbatim as the system message. Add a `.replace("{voiceAngle}", voiceAngle)` step before the `structured.invoke(...)` call, in both the expansion-mode and normal-mode branches. Without this, the literal string `{voiceAngle}` would land in the system message sent to gpt-4o.
 
 ### scriptWriter (both modes)
 
-`SCRIPT_WRITER_PROMPT` currently has a "Voice rules:" block at the bottom:
+The generic `SCRIPT_WRITER_PROMPT` is not just one "Voice rules:" block — it has voice-flavored content in three places that all need handling:
 
-> Voice rules: short sentences land, long sentences breathe, contractions natural, em-dash asides, restarts conversational, dry humor on a beat. Read each chapter's opening aloud in your head.
+**1. Preamble (line 104).** Currently: "You are writing a single-narrator podcast in the voice of a knowledgeable friend talking through a topic at a coffee table — think Acquired, Hard Fork, or Stratechery read aloud. Not NPR, not a TED talk, not a textbook."
 
-This entire block is **deleted** and replaced with a `{voicePersonality}` placeholder filled from `summary + scriptStyle`. Same replacement in `SCRIPT_WRITER_EXPANSION_PROMPT`.
+The "knowledgeable friend at a coffee table" framing is Sulafat-flavored. Charon is more analyst, Sadaltager more historian. **Neutralize to:** "You are writing a single-narrator podcast script. Not NPR, not a TED talk, not a textbook." The personality block carries the speaker framing.
 
-Structure rules stay verbatim: chapter count target (4-6 chapters), word count floor (5400 words), hard avoids list, disclaimer slot, `chapter_research_map` output format.
+**2. Voice descriptor parenthetical (line 106).** Currently: "This script will be rendered as expressive audio by a TTS model with a chosen voice (warm, conversational, low-energy confident)."
+
+The "(warm, conversational, low-energy confident)" parenthetical describes Sulafat. **Drop the parenthetical entirely.** Keep the rest of the sentence.
+
+**3. "Voice rules:" 11-bullet list (lines 110-121).** Not all bullets are voice content. Split:
+
+| Bullet | Content | Action |
+|---|---|---|
+| 1 | "Open IN the topic. First sentence should land on a specific stat..." | KEEP — structural cold-open rule, universal |
+| 2 | "Talk like a person, not a presenter. 'you know'/'kinda'..." | STRIP — Sulafat/Achird-leaning casual register |
+| 3 | "Audio rhythm matters as much as content. Short sentences land — Long sentences breathe..." | STRIP — voice-specific rhythm prescription |
+| 4 | "Build in natural breath points. 30+ word sentence without a comma sounds winded" | KEEP — universal audio rule |
+| 5 | "Sentence fragments work" | STRIP — voice-specific |
+| 6 | "Use em-dash asides — like this —" | STRIP — voice-specific |
+| 7 | "Restarts are conversational. 'Or rather—'..." | STRIP — Sulafat/Achird-leaning |
+| 8 | "Dry humor lands on a beat of its own" | STRIP — Sulafat-leaning |
+| 9 | "Vary sentence length aggressively" | STRIP — voice-specific advice |
+| 10 | "Specific data, names, dates inline — fold sources into prose; never reference indices like '[Source 4]'" | KEEP — structural citation rule |
+| 11 | "Use contractions naturally" | STRIP — voice-specific (Charon uses sparingly) |
+
+After the strip: rename the block to "**Universal rules:**" and keep bullets 1, 4, 10 (three bullets total). Insert the `{voicePersonality}` placeholder block just below the renamed block. The self-check section, hard-avoids list, structure section, and `chapter_research_map` output format all stay verbatim.
+
+**4. SCRIPT_WRITER_EXPANSION_PROMPT specifics.** Same three changes as above:
+- Preamble line 167 has the same Sulafat parenthetical — drop the parenthetical.
+- Single-line "Voice rules:" at line 194 — this whole line gets replaced with `{voicePersonality}`. (No 11-bullet split here; the expansion prompt was already a leaner version.)
+- The "CRITICAL OPENING RULE" block at line 169 is structural (continuation callback) — keep verbatim.
+
+**Wiring note:** `scriptWriter.ts` already does `.replace()` substitution. Add `.replace("{voicePersonality}", voicePersonality)` to the existing chain. Both prompts use the same chain.
 
 ### tagInjector
 
@@ -219,20 +279,27 @@ The four personality blocks. Each combines Gemini's official one-word descriptor
 
 ### Sadaltager (Gemini: Knowledgeable)
 
-- **summary:** "Thoughtful, lyrical. The dinner-party historian voice. Anchors ideas in stories and images."
-- **briefAngle:** "Lean toward questions that surface tensions, irony, and unresolved aspects. Answers should suggest the human stories behind the facts."
+- **summary:** "Thoughtful, lyrical. The dinner-party historian voice. Anchors abstractions in scenes and named people."
+- **briefAngle:** "Lean toward questions that surface tensions, irony, named individuals, and unresolved aspects. Answers should suggest the human stories behind the facts and include dates and specific places."
 - **scriptStyle:**
   ```
+  Open each chapter with a scene or anecdote before the abstraction:
+  a person at a moment, a date and a place, a single object that
+  carries the argument. Name a specific person within the first three
+  sentences of every chapter. Favor past-tense narration over
+  present-tense exposition — "in 1903, Bezzera filed..." not
+  "Bezzera's design works by..."
+
   Longer sentences than the others — the prose breathes. Em-dashes and
   parentheticals welcome. Contractions natural.
 
-  Anchor ideas in stories or images. A mechanism is a scene, not a
-  diagram. The listener should feel they're being told a story, not
-  given a lecture. Reflective asides: "what's interesting", "what they
-  didn't realize at the time", "the part that still surprises".
+  Reflective asides happen in retrospect: "what they didn't realize at
+  the time", "what's interesting in hindsight", "the part historians
+  still argue about". Allow the prose to wander, then return to the
+  point.
 
-  Allow the prose to wander, then return to the point. Closings often
-  land on irony or a quiet observation, not a thesis statement.
+  Closings land on a quiet historical irony or an observation about
+  what's still unresolved. Never a thesis statement.
   ```
 
 ### Achird (Gemini: Friendly)
@@ -273,14 +340,16 @@ This is a deliberate trade-off. The generic prompt path is gone in this refactor
 - `getVoicePersonality("unknown")` returns Sulafat
 - Iterates `VOICE_PERSONALITIES` and asserts each entry has all three fields non-empty
 
-### New: `pipeline/tests/tagInjector.test.ts`
+### Modified: `pipeline/tests/tagInjector.test.ts`
 
-- Currently no dedicated test file. Adds one.
-- Mocks `getGeminiClient`, captures the prompt sent to `generateContent`.
-- Asserts personality summary text appears in the prompt for Sulafat.
-- Asserts a different personality summary appears when voice is Charon.
-- Asserts hard constraints survive: `[CHAPTER:`, `[AD:PRE_ROLL]`, `[AD:MID_ROLL]` preservation rules are present.
-- Asserts the new simplified rule block is present (e.g. `/Place each tag immediately before/`).
+The file already exists with 5 tests (88 lines) covering tag insertion, SDK-error fallthrough, empty-output fallthrough, chapter-marker-mismatch fallthrough, and `AUDIO_TAGS` presence. Mocking pattern is the existing `vi.mock("../src/podcast_pipeline/providers/gemini.js")`.
+
+Add to the existing file:
+- Assert personality summary text appears in the prompt for Sulafat.
+- Assert a different personality summary appears when voice is Charon.
+- Assert hard constraints survive: `[CHAPTER:`, `[AD:PRE_ROLL]`, `[AD:MID_ROLL]` preservation rules are present.
+- Assert the new simplified rule block is present (e.g. `/Place each tag immediately before/`).
+- Add a null-voice case asserting Sulafat's content appears (fallback).
 
 ### Edits to existing test files
 
@@ -308,6 +377,8 @@ Old completed podcasts are unaffected; they're already in storage. The next pipe
 | Typo or self-contradiction inside one voice's `scriptStyle` makes that voice produce odd output | Low | `tts-eval --inject-tags` lets us iterate fast on the tagInjector personality block; Langfuse traces show the rendered prompt per generation |
 | New 200-tag set produces too many or too few tags in practice | Medium | Tunable in one line ("avoid overusing" can become "aim for roughly one tag per 2-3 sentences" if density drifts wrong) |
 | Voice personality block conflicts with `scriptWriter`'s structural rules | Low | Replacement strategy (not append) avoids the conflict; structural rules stay voice-agnostic |
+| 200-tag list inflates tagInjector prompt token cost | Low | ~190 extra input tokens per call on gemini-2.5-flash, roughly $0.0001 incremental per podcast. Negligible. |
+| In-flight podcasts during deploy see mixed-version prompts | None | LangGraph pipeline runs are not resumable across deploys today; each pipeline instance is in-memory only. A Railway restart aborts in-flight runs and `recoverStuckJobs` re-enqueues from scratch with the new prompts. |
 | Reverting requires a redeploy | Low | ~1 minute via `npm run deploy` to Railway |
 
 ### Out of scope
@@ -316,6 +387,7 @@ Old completed podcasts are unaffected; they're already in storage. The next pipe
 - **Per-voice full prompt variants.** Considered and rejected. Maintaining four parallel copies of `SCRIPT_WRITER_PROMPT` diverges fast.
 - **Voice-aware metadata generation (titles, descriptions).** Smaller leverage; not part of this pass.
 - **Custom user-defined voices.** Not on the roadmap yet.
+- **Converging mobile picker descriptors and pipeline summaries.** The mobile `voiceSamples.ts` descriptors (UI marketing copy) and the pipeline `summary` fields (LLM prompt content) describe the same voices for different audiences. Intentionally written independently for now. If they drift, we can converge later by having mobile read the pipeline-side summaries.
 
 ---
 
@@ -328,7 +400,6 @@ Old completed podcasts are unaffected; they're already in storage. The next pipe
 | `pipeline/src/podcast_pipeline/voicePersonality.ts` | `VoicePersonality` interface, `VOICE_PERSONALITIES` map, `getVoicePersonality` helper |
 | `pipeline/src/podcast_pipeline/audioTags.ts` | Full 200-tag set; imported by `config.ts` for backward compat |
 | `pipeline/tests/voicePersonality.test.ts` | Unit tests for the helper and the map |
-| `pipeline/tests/tagInjector.test.ts` | Unit tests for tagInjector with personality injection |
 
 ### Modified
 
@@ -340,3 +411,4 @@ Old completed podcasts are unaffected; they're already in storage. The next pipe
 | `pipeline/src/podcast_pipeline/nodes/tagInjector.ts` | Change `TAG_INJECTOR_PROMPT` signature to take voice + personality; rewrite to simpler Google-style prompt with voice context block |
 | `pipeline/tests/briefBuilder.test.ts` | Add personality-injection assertions; null-voice fallback case |
 | `pipeline/tests/scriptWriter.test.ts` | Add personality-injection assertions; assert old generic block is gone |
+| `pipeline/tests/tagInjector.test.ts` | Add personality-injection assertions; null-voice fallback case |
