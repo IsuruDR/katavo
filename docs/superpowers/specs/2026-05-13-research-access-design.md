@@ -287,8 +287,6 @@ Failing this wire-up, fallback: don't cache. Re-fetch on every screen mount. Sli
 
 ### Manual smoke (post-deploy)
 
-### Manual smoke (post-deploy)
-
 - Paid account on a completed parent: tap Research, see chapters with citations, tap a `[1]` opens the source URL.
 - Paid account on a completed expansion: tap Research, see the expansion's research (different from parent's).
 - Free account: tap Research, get bounced to /plans.
