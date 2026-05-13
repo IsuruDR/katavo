@@ -27,7 +27,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { LoadingOverlay } from "../src/components/LoadingOverlay";
 import { SwitchTierSheet } from "../src/components/SwitchTierSheet";
 import { PurchaseFailureSheet } from "../src/components/PurchaseFailureSheet";
@@ -49,8 +49,21 @@ import {
 import type { SwitchFailure } from "../src/lib/switchErrors";
 import { color, font, layout, space, text } from "../src/theme/tokens";
 
+/**
+ * Contextual title swap. When the screen receives `?context=<feature>`
+ * (e.g. from the Research NavRow on free tier), the title contextualises
+ * to the feature being upgraded toward. Keeps the rest of the page
+ * generic; only the title line changes.
+ */
+const CONTEXT_TITLES: Record<string, string> = {
+  research: "Upgrade to see the Research",
+};
+
 export default function Plans() {
   const router = useRouter();
+  const { context } = useLocalSearchParams<{ context?: string }>();
+  const titleText =
+    (context && CONTEXT_TITLES[context]) ?? "Pick your shelf.";
   const { subscription, loading, refresh } = useSubscription();
   const serverTier: Tier = subscription?.tier ?? "free";
   const renewalDate = subscription?.renewalDate ?? null;
@@ -198,7 +211,7 @@ export default function Plans() {
       >
         <View style={styles.titleBlock}>
           <Text style={styles.eyebrow}>Plans</Text>
-          <Text style={styles.title}>Pick your shelf.</Text>
+          <Text style={styles.title}>{titleText}</Text>
           <Text style={styles.subtitle}>Switch any time.</Text>
         </View>
 

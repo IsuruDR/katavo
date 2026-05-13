@@ -35,7 +35,9 @@ export function ResearchNavRow({ podcastId, podcastStatus }: Props) {
     if (unlocked) {
       router.push(`/player/${podcastId}/research`);
     } else {
-      router.push("/plans");
+      // Pass context so /plans contextualises its title to "Upgrade to
+      // see the Research" instead of the generic "Pick your shelf."
+      router.push({ pathname: "/plans", params: { context: "research" } });
     }
   };
 
@@ -48,14 +50,12 @@ export function ResearchNavRow({ podcastId, podcastStatus }: Props) {
         accessibilityLabel={
           unlocked
             ? "Open research and sources behind this episode"
-            : "Research is a Plus feature. Upgrade to access."
+            : "Sources behind this episode. Upgrade to access the research."
         }
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       >
         <View style={styles.body}>
-          <Text style={styles.eyebrow}>
-            {unlocked ? "Research" : "Research · Plus"}
-          </Text>
+          <Text style={styles.eyebrow}>Research</Text>
           <Text style={styles.title}>Sources behind this episode</Text>
         </View>
         <Feather name="chevron-right" size={20} color={color.inkSecondary} />
