@@ -222,10 +222,8 @@ export const GEMINI_VOICES = ["Sulafat", "Charon", "Sadaltager", "Achird"] as co
 export type GeminiVoice = typeof GEMINI_VOICES[number];
 export const DEFAULT_GEMINI_VOICE: GeminiVoice = "Sulafat";
 
-export const AUDIO_TAGS_DEFAULT = [
-  "laughs", "whispers", "sighs", "chuckles", "curious",
-  "thoughtful", "serious", "surprised", "exhales", "pauses",
-] as const;
+import { AUDIO_TAGS_DEFAULT } from "./audioTags.js";
+export { AUDIO_TAGS_DEFAULT };
 
 const _audioTagsEnv = process.env.AUDIO_TAGS?.split(",").map((s) => s.trim()).filter(Boolean);
 export const AUDIO_TAGS: readonly string[] =
