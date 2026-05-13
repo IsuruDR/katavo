@@ -105,24 +105,18 @@ Avoid generic "what is X" questions. The listener already heard the parent's cov
 - Recent developments the parent might not have included
 `;
 
-export const SCRIPT_WRITER_PROMPT = `You are writing a single-narrator podcast in the voice of a knowledgeable friend talking through a topic at a coffee table — think Acquired, Hard Fork, or Stratechery read aloud. Not NPR, not a TED talk, not a textbook.
+export const SCRIPT_WRITER_PROMPT = `You are writing a single-narrator podcast script. Not NPR, not a TED talk, not a textbook.
 
-This script will be rendered as expressive audio by a TTS model with a chosen voice (warm, conversational, low-energy confident). Write for the ear, not the eye. Every sentence should sound right read aloud — not just parse correctly on the page. A second pass will lightly insert audio cues like [chuckles] / [pauses] for delivery; your job is to write prose with the rhythm those cues will sit on top of.
+This script will be rendered as expressive audio by a TTS model. Write for the ear, not the eye. Every sentence should sound right read aloud — not just parse correctly on the page. A second pass will lightly insert audio cues like [chuckles] / [pauses] for delivery; your job is to write prose with the rhythm those cues will sit on top of.
 
 Length: aim for {targetWords} words (~36-44 minutes at 150 wpm). Hard floor: 5400 words. Going long is fine; going short is not. Better to be 40 minutes of dense narrative than 25 minutes that feels rushed.
 
-Voice rules:
+Universal rules:
 - Open IN the topic. First sentence should land on a specific stat, moment, or person — never preamble. Examples that work: "Bezzera's first patent was filed on a Tuesday." / "There's a number that explains all of this: three." Examples that don't: "Today we'll explore...", "Imagine a world..."
-- Talk like a person, not a presenter. A few "you know"s, "kinda"s, "I mean"s scattered through. An occasional "huh" or "anyway" between thoughts. Don't overdo it — once or twice per chapter.
-- Audio rhythm matters as much as content. Short sentences land — use them to close an idea or land an observation. Long sentences breathe — use them when an idea is unfolding, not when summarizing.
 - Build in natural breath points. A sentence that runs 30+ words without a comma will sound winded. Break it.
-- Sentence fragments work. ("Like this.") They sound like thinking out loud. Use sparingly.
-- Use em-dash asides — like this — for the parts you'd lower your voice for. The aside should genuinely be a side note, not the main beat.
-- Restarts are conversational. "Or rather—", "Wait, actually—", "Hmm, no—" sound natural in audio. Don't fake them; use only when the train of thought genuinely needs to redirect.
-- Dry humor lands on a beat of its own. Set it up, then deliver the observation as a short standalone sentence. Never punchlines or written jokes.
-- Vary sentence length aggressively. Short ones land. Long ones, with the texture of someone actually thinking through a sentence, breathe.
 - Specific data, names, dates inline — fold sources into prose ("a 2019 Stanford study found..."), never reference indices like "[Source 4]".
-- Use contractions naturally (it's, won't, that's). Written-formal contractions ("it is", "do not") sound stilted on audio.
+
+{voicePersonality}
 
 Self-check before finalizing:
 - Count the words in the script body (excluding [CHAPTER:] markers and the JSON map). If under 5400 words, expand. The most common gap is thin middle chapters — each non-opening chapter should have at least 1050 words.
@@ -168,7 +162,7 @@ Sources:
 
 export const SCRIPT_WRITER_EXPANSION_PROMPT = `You are writing a CONTINUATION episode of a podcast series. The listener already heard the parent podcast and now wants more depth on a specific chapter.
 
-This script will be rendered as expressive audio by a TTS model with a chosen voice (warm, conversational, low-energy confident). Write for the ear, not the eye.
+This script will be rendered as expressive audio by a TTS model. Write for the ear, not the eye.
 
 CRITICAL OPENING RULE: your first chapter MUST open with a callback to the source chapter. Not "today we'll explore" or "imagine for a moment" — instead, sound like you're picking up a conversation: "Back in the chapter on \${sourceChapterTitle} we touched on X. Let's go deeper." Or: "Last time when I talked about \${sourceChapterTitle}, there was a moment where..." — make it feel like a continuation, not a restart.
 
@@ -195,7 +189,7 @@ Hard avoids (same as parent):
 
 Length: aim for {targetWords} words. Hard floor: 5400 words. Going long is fine; going short is not.
 
-Voice rules: same as the parent — short sentences land, long sentences breathe, contractions natural, em-dash asides, restarts conversational, dry humor on a beat. Read each chapter's opening aloud in your head.
+{voicePersonality}
 
 After the script, output the chapter_research_map JSON block (same format as the parent's pipeline).
 

@@ -223,4 +223,73 @@ describe("scriptWriter expansion mode", () => {
     const systemPrompt = mockCreate.mock.calls[0][0].messages[0].content;
     expect(systemPrompt).not.toContain("CONTINUATION");
   });
+
+  it("injects voice personality block for the chosen voice", async () => {
+    const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
+      (await import("openai")) as any;
+
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "[CHAPTER: A]\nNormal." } }],
+    });
+    mockModCreate.mockResolvedValue({ results: [{ flagged: false }] });
+
+    await scriptWriter({
+      podcastId: "p1",
+      voice: "Sadaltager",
+      researchDocument: { sections: [{ title: "T", content: "C" }] },
+      sources: [],
+      parentPodcastId: null,
+    } as any);
+
+    const systemPrompt = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(systemPrompt).toContain("Voice personality:");
+    expect(systemPrompt).toContain("dinner-party historian");
+    expect(systemPrompt).toContain("Name a specific person within the first three sentences");
+    expect(systemPrompt).not.toContain("friendly-knowledgeable-friend");
+  });
+
+  it("falls back to Sulafat's personality when voice is null", async () => {
+    const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
+      (await import("openai")) as any;
+
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "[CHAPTER: A]\nNormal." } }],
+    });
+    mockModCreate.mockResolvedValue({ results: [{ flagged: false }] });
+
+    await scriptWriter({
+      podcastId: "p1",
+      voice: null,
+      researchDocument: { sections: [{ title: "T", content: "C" }] },
+      sources: [],
+      parentPodcastId: null,
+    } as any);
+
+    const systemPrompt = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(systemPrompt).toContain("friendly-knowledgeable-friend");
+  });
+
+  it("does NOT contain the old generic 'Voice rules:' bullets", async () => {
+    const { __mockCreate: mockCreate, __mockModCreate: mockModCreate } =
+      (await import("openai")) as any;
+
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "[CHAPTER: A]\nNormal." } }],
+    });
+    mockModCreate.mockResolvedValue({ results: [{ flagged: false }] });
+
+    await scriptWriter({
+      podcastId: "p1",
+      voice: "Charon",
+      researchDocument: { sections: [{ title: "T", content: "C" }] },
+      sources: [],
+      parentPodcastId: null,
+    } as any);
+
+    const systemPrompt = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(systemPrompt).not.toMatch(/Talk like a person, not a presenter/);
+    expect(systemPrompt).not.toMatch(/Restarts are conversational\./);
+    expect(systemPrompt).toContain("Open IN the topic");
+    expect(systemPrompt).toContain("never reference indices like");
+  });
 });

@@ -5,6 +5,7 @@
 
 import { getObservedOpenAI } from "../providers/langfuseClient.js";
 import { SCRIPT_WRITER_PROMPT, SCRIPT_WRITER_EXPANSION_PROMPT, TARGET_WORD_COUNT } from "../config.js";
+import { getVoicePersonality } from "../voicePersonality.js";
 import { persistStatus } from "./persistStatus.js";
 import type { PipelineStateType, ChapterResearchMap, ChapterResearchEntry } from "../state.js";
 
@@ -70,13 +71,17 @@ export async function scriptWriter(
   const isExpansion = !!state.parentPodcastId;
   const promptTemplate = isExpansion ? SCRIPT_WRITER_EXPANSION_PROMPT : SCRIPT_WRITER_PROMPT;
 
+  const personality = getVoicePersonality(state.voice);
+  const voicePersonality = `Voice personality:\n${personality.summary}\n\n${personality.scriptStyle}`;
+
   const prompt = promptTemplate
     .replace("{targetWords}", String(TARGET_WORD_COUNT))
     .replace("{researchDocument}", JSON.stringify(researchDocument))
     .replace("{sources}", JSON.stringify(sources))
     .replace("{disclaimerContext}", disclaimerContext)
     .replaceAll("{sourceChapterTitle}", state.sourceChapterTitle ?? "")
-    .replace("{parentChapterTranscript}", state.parentChapterTranscript ?? "");
+    .replace("{parentChapterTranscript}", state.parentChapterTranscript ?? "")
+    .replace("{voicePersonality}", voicePersonality);
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
