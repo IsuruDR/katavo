@@ -14,7 +14,8 @@
     "reset-user": "tsx scripts/reset-user.ts",
     "make-pro": "tsx scripts/make-pro-user.ts",
     "build-voice-samples": "tsx scripts/build-voice-samples.ts",
-    "test-voices": "tsx scripts/test-voices.ts"
+    "test-voices": "tsx scripts/test-voices.ts",
+    "tts-eval": "tsx scripts/tts-eval.ts"
   },
   "dependencies": {
     "@expo-google-fonts/ibm-plex-sans": "^0.4.1",
