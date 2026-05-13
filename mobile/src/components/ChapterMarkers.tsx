@@ -31,6 +31,15 @@ interface Props {
   parentPodcastId: string;
   onExpandTapped: (chapterTitle: string) => void;
   onOpenExpansion: (expansionPodcastId: string) => void;
+  /**
+   * Gates the "Expand ›" affordance on chapters that don't yet have an
+   * expansion. True once the user has listened to ~the end of the parent
+   * podcast. Until then, showing Expand on every row is just noise — the
+   * user hasn't heard the content yet. Existing expansions (complete,
+   * in-flight, failed) are always shown regardless: they only exist
+   * because a prior expansion was already submitted.
+   */
+  endReached: boolean;
 }
 
 function formatTime(seconds: number | undefined | null): string {
@@ -49,6 +58,7 @@ export function ChapterMarkers({
   parentPodcastId,
   onExpandTapped,
   onOpenExpansion,
+  endReached,
 }: Props) {
   const { expansions, parentExpandable } = useChapterExpansions(parentPodcastId);
 
@@ -83,6 +93,9 @@ export function ChapterMarkers({
               {parentExpandable && (() => {
                 const entry = expansions.get(item.title);
                 if (!entry) {
+                  // Only offer expansion after the user has actually
+                  // listened through the parent. Before that it's noise.
+                  if (!endReached) return null;
                   return (
                     <Pressable
                       onPress={() => onExpandTapped(item.title)}

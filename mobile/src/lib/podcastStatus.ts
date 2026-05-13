@@ -42,6 +42,43 @@ export function getStatusMeta(status: string): StatusMeta {
 }
 
 /**
+ * Number of milestones a podcast passes through from submit to ready.
+ * Four dots: Research, Script, Audio, Ready. Each integer returned is a
+ * stage that has FINISHED — the current stage's dot blinks; finished
+ * stages are solid.
+ *
+ * Queued is folded into Research because in practice it's sub-second:
+ * the pipeline's briefBuilder node persists "researching" as its first
+ * action, so the row leaves "queued" almost immediately. Showing it as
+ * a distinct dot would just flash briefly and add noise. Queued and
+ * researching share the same dot pattern; only the label distinguishes
+ * them ("Starting up" vs "Researching").
+ *
+ * The fourth dot — Ready — fills only when status flips to "complete",
+ * at which point the row exits in-flight rendering. During the audio
+ * stage the user sees ● ● ◐ ○, which reads as "we're on the last work
+ * stage, Ready is the next milestone."
+ */
+export const TOTAL_WORK_STEPS = 4;
+
+export function getCompletedSteps(status: string): number {
+  switch (status) {
+    case "complete":
+      return 4;
+    case "generating_audio":
+      return 2;
+    case "scripting":
+      return 1;
+    case "queued":
+    case "researching":
+    case "fact_checking":
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+/**
  * Human-readable elapsed time since the current stage began.
  * Returns null when the input timestamp isn't usable.
  */

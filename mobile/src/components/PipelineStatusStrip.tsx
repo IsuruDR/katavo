@@ -21,6 +21,8 @@ import {
   View,
 } from "react-native";
 import { color, font, motion, space } from "../theme/tokens";
+import { StepDots } from "./StepDots";
+import { getCompletedSteps, TOTAL_WORK_STEPS } from "../lib/podcastStatus";
 
 export type PodcastStatus =
   | "queued"
@@ -95,7 +97,13 @@ export function PipelineStatusStrip({ status }: Props) {
         {LABELS[status] ?? status}
       </Text>
       {inFlight && (
-        <Animated.View style={[styles.rule, { opacity: pulse }]} />
+        <>
+          <StepDots
+            totalSteps={TOTAL_WORK_STEPS}
+            completedSteps={getCompletedSteps(status)}
+          />
+          <Animated.View style={[styles.rule, { opacity: pulse }]} />
+        </>
       )}
     </View>
   );
