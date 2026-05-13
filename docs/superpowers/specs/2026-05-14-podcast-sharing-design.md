@@ -14,7 +14,7 @@ Today a podcast lives inside Katavo: the only way to hear it is to install the a
 
 Public share links solve two things at once:
 1. **Utility for the existing user.** They generated something interesting; they should be able to share it like any other audio.
-2. **Soft growth lever.** The share page carries a "Made with Katavo, generate yours" footer with App/Play Store badges. Friends-of-users are the highest-converting cohort, and seeing a deep multi-chapter series is the strongest pitch for "make your own".
+2. **Soft growth lever.** The share page carries a "Made with Katavo. Generate your own." footer with App/Play Store badges. Friends-of-users are the highest-converting cohort, and seeing a deep multi-chapter series is the strongest pitch for "make your own".
 
 Constraint: the *research* behind a podcast (research_contexts, citations, sources) stays private. Sharing a podcast publishes the audio plus chapter structure only. The research is still Plus-paid value for the owner.
 
@@ -39,12 +39,12 @@ CREATE UNIQUE INDEX podcasts_share_token_unique
 CREATE OR REPLACE FUNCTION public.get_shared_tree(p_token text)
 RETURNS TABLE (
   id uuid,
+  user_id uuid,
   parent_podcast_id uuid,
   topic text,
-  cover_url text,
+  has_cover boolean,
   chapter_markers jsonb,
   duration_seconds int,
-  audio_url text,
   status text,
   is_root boolean
 )
@@ -53,22 +53,24 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
   WITH RECURSIVE tree AS (
-    SELECT p.id, p.parent_podcast_id, p.topic, p.cover_url, p.chapter_markers,
-           p.duration_seconds, p.audio_url, p.status, true AS is_root
+    SELECT p.id, p.user_id, p.parent_podcast_id, p.topic,
+           (p.cover_url IS NOT NULL) AS has_cover,
+           p.chapter_markers, p.duration_seconds, p.status, true AS is_root
     FROM podcasts p
     WHERE p.share_token = p_token
       AND p.deleted_at IS NULL
       AND p.status = 'complete'
     UNION ALL
-    SELECT p.id, p.parent_podcast_id, p.topic, p.cover_url, p.chapter_markers,
-           p.duration_seconds, p.audio_url, p.status, false AS is_root
+    SELECT p.id, p.user_id, p.parent_podcast_id, p.topic,
+           (p.cover_url IS NOT NULL) AS has_cover,
+           p.chapter_markers, p.duration_seconds, p.status, false AS is_root
     FROM podcasts p
     INNER JOIN tree t ON p.parent_podcast_id = t.id
     WHERE p.deleted_at IS NULL
       AND p.status = 'complete'
   )
-  SELECT id, parent_podcast_id, topic, cover_url, chapter_markers,
-         duration_seconds, audio_url, status, is_root
+  SELECT id, user_id, parent_podcast_id, topic, has_cover,
+         chapter_markers, duration_seconds, status, is_root
   FROM tree;
 $$;
 
@@ -79,7 +81,7 @@ GRANT EXECUTE ON FUNCTION public.get_shared_tree(text) TO service_role;
 - `share_token` NULL means the podcast is private (default).
 - `share_token` SET means the podcast is public via that token.
 - Unique partial index prevents collisions without forcing every row to fill the column.
-- `get_shared_tree` is `SECURITY DEFINER`, callable only by the service role from the pipeline server. It returns the share-page row set in one round-trip. `is_root` flags the row matched by the token (used by the page to pick the initial player track).
+- `get_shared_tree` is `SECURITY DEFINER`, callable only by the service role from the pipeline server. It returns the share-page row set in one round-trip. `is_root` flags the row matched by the token (used by the page to pick the initial player track). The function returns `user_id` and `has_cover` instead of the raw URL columns so the server can rebuild storage paths and freshly sign each render (existing rows have 1-year signed URLs stored in `audio_url`/`cover_url`, which would otherwise be embedded into the HTML as-is and rot when they expire).
 
 The existing UPDATE policy on `podcasts` is locked to soft-delete only (migration 00007). We do not loosen it; token issuance happens server-side using the service-role client, never through the user's JWT.
 
@@ -90,7 +92,7 @@ Token format: 10 chars base64url-encoded (7 random bytes, ~7.2 × 10^16 combinat
 ```mermaid
 flowchart LR
   user[User taps Share<br/>on player screen]
-  endpoint[Mobile: POST /api/share/:podcastId<br/>with Supabase JWT]
+  endpoint[Mobile: POST /api/share-podcast/:podcastId<br/>with Supabase JWT]
   server[Hono: verify ownership,<br/>issue token via crypto.randomBytes,<br/>UPDATE podcasts SET share_token]
   url[Build URL:<br/>SHARE_BASE/p/&lt;token&gt;]
   sheet[Native Share Sheet<br/>Share.share with URL + topic]
@@ -114,7 +116,9 @@ The owner can keep expanding the shared podcast after sharing. There is no lock 
 
 ## Surface 1: mobile share button
 
-New NavRow below the existing Research NavRow on the player screen. Same editorial pattern: eyebrow, title, subtitle, chevron.
+New NavRow below the existing Research NavRow on the player screen. Same editorial pattern: eyebrow, title, optional subtitle, chevron.
+
+`ResearchNavRow` today only has eyebrow + title (`mobile/src/components/ResearchNavRow.tsx:57-60`). To keep both rows visually consistent, extract a shared `NavRow` primitive that takes `{ eyebrow, title, subtitle?, onPress, accessibilityLabel }`. ResearchNavRow becomes a thin wrapper that doesn't pass `subtitle`. ShareNavRow passes it. One layout, two callers, no drift.
 
 | State | Eyebrow | Title | Subtitle | Tap action |
 |---|---|---|---|---|
@@ -125,15 +129,15 @@ When `podcastStatus !== "complete"`, the row hides entirely (same pattern as Res
 
 ### Issue-token endpoint (server-side)
 
-New authed route on the pipeline server: `POST /api/share/:podcastId`. The mobile client sends the user's Supabase JWT in the `Authorization` header. The route:
+New authed route on the pipeline server: `POST /api/share-podcast/:podcastId` (kebab-case matches the existing `/api/submit-podcast`, `/api/start-deep-dive`, etc. naming). The mobile client sends the user's Supabase JWT in the `Authorization` header. The route:
 
 1. Verifies the JWT and resolves `user_id`.
-2. Loads the podcast by `id` and asserts `user_id = caller AND deleted_at IS NULL AND status = 'complete'`.
+2. Loads the podcast by `id` and asserts `user_id = caller AND deleted_at IS NULL AND status = 'complete'`. Wrong owner returns 403; non-complete returns 409.
 3. If `share_token` is already set, returns `{ token: <existing> }` (idempotent).
-4. Otherwise generates a token via `crypto.randomBytes(7).toString("base64url")`, runs `UPDATE podcasts SET share_token = $1 WHERE id = $2 AND share_token IS NULL`. If 0 rows updated (race lost), re-reads and returns whichever token won.
+4. Otherwise generates a token via `crypto.randomBytes(7).toString("base64url")`, runs `UPDATE podcasts SET share_token = $1 WHERE id = $2 AND share_token IS NULL`. If 0 rows updated (race lost between the SELECT and the UPDATE), re-reads and returns whichever token won. If the UPDATE fails with a unique-violation (Postgres error code `23505`, vanishingly unlikely given the keyspace), regenerate the token and retry once; on second failure return 500.
 5. Returns `{ token: string }`.
 
-Authentication uses the existing `verifySupabaseJwt` helper that protects `POST /api/podcasts`. Token generation runs with the service-role Supabase client, which bypasses the soft-delete-only UPDATE policy on podcasts. No client crypto, no expo-crypto, no Buffer polyfill.
+Authentication uses the existing `userAuth` middleware in `pipeline/src/middleware/auth.ts` that protects `POST /api/submit-podcast`. Token generation runs with the service-role Supabase client, which bypasses the soft-delete-only UPDATE policy on podcasts. No client crypto, no expo-crypto, no Buffer polyfill.
 
 ### Mobile share invocation
 
@@ -141,14 +145,14 @@ Authentication uses the existing `verifySupabaseJwt` helper that protects `POST 
 import { Share } from "react-native";
 import { supabase } from "../lib/supabase";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL!;
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const SHARE_BASE = process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? API_URL;
 
 async function shareEpisode(podcastId: string, topic: string, existingToken: string | null) {
   let token = existingToken;
   if (!token) {
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${API_URL}/api/share/${podcastId}`, {
+    const res = await fetch(`${API_URL}/api/share-podcast/${podcastId}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
@@ -165,9 +169,11 @@ async function shareEpisode(podcastId: string, topic: string, existingToken: str
 }
 ```
 
-The mobile app already reads `EXPO_PUBLIC_API_URL` for the pipeline base (see `mobile/src/services/podcast.ts` and `useDeepDive.ts`). The share base defaults to that same URL when `EXPO_PUBLIC_SHARE_BASE_URL` isn't set, which is the common case today since the share page is hosted on the same Hono server. Once a custom domain like `katavo.co` ships, `EXPO_PUBLIC_SHARE_BASE_URL` overrides it.
+Both `url` and `message` are populated on the `Share.share` call. iOS uses `url`, Android uses `message`. Topic in the message gives recipients context before they tap. After the share sheet returns, the caller writes the new token back into the local `Podcast` row so the NavRow flips to the "Copy link" state without a refetch.
 
-Both `url` and `message` are populated. iOS uses `url`, Android uses `message`. Topic in the message gives recipients context before they tap. After the share sheet returns, the caller writes the new token back into the local `Podcast` row so the NavRow flips to the "Copy link" state without a refetch.
+NavRow tap wraps this in a try/catch: on error, surface a short Alert (`"Couldn't share. Try again in a moment."`) and log the error. Don't swallow silently and don't leave the user staring at an unresponsive button.
+
+The mobile app already reads `EXPO_PUBLIC_API_URL` for the pipeline base (see `mobile/src/services/podcast.ts` and `useDeepDive.ts`). The share base defaults to that same URL when `EXPO_PUBLIC_SHARE_BASE_URL` isn't set, which is the common case today since the share page is hosted on the same Hono server. Once a custom domain like `katavo.co` ships, `EXPO_PUBLIC_SHARE_BASE_URL` overrides it.
 
 ---
 
@@ -178,9 +184,11 @@ New public route in the Hono pipeline server: `GET /p/:token`.
 ### Route behavior
 
 1. Call the `get_shared_tree(p_token)` RPC via the service-role Supabase client. If the result set is empty, render a 404 page (HTML).
-2. The RPC returns the matched podcast (flagged `is_root`) plus every still-live descendant in one round-trip. Tree depth is bounded by chapter-expansion depth (currently 1, capped at 2 in the immediate roadmap), so the result set is small.
-3. For each podcast in the tree, generate a fresh signed URL for `audio_url` and (if present) `cover_url` via `storage.from(bucket).createSignedUrl(path, ttl)`. Both buckets are private (migration 00004), so the signed URL is what makes them playable from an unauthenticated browser. Re-signing on each render is cheap (a single Storage API call per row), keeps URLs fresh, and avoids storing long-lived URLs in HTML.
+2. The RPC returns the matched podcast (flagged `is_root`) plus every still-live, completed descendant in one round-trip. Tree depth is bounded by chapter-expansion depth (currently 1, capped at 2 in the immediate roadmap), so the result set is small. Descendants that haven't finished generating yet (status != 'complete') are silently omitted; they show up once they finish.
+3. For each podcast in the result, rebuild the storage path from the returned `user_id` and `id`: audio at `${user_id}/${id}.mp3` in the `podcast-audio` bucket, cover at `${user_id}/${id}.png` in the `podcast-covers` bucket when `has_cover` is true. Call `storage.from(bucket).createSignedUrl(path, 3600)` for each. Both buckets are private (migration 00004), so the signed URL is what makes them playable from an unauthenticated browser.
 4. Render the HTML page with all data inlined.
+
+Path reconstruction is necessary because `audio_url` and `cover_url` columns store *signed URLs* (not paths), with a 1-year TTL set at generation time, per `audioProducer.ts` and `metadataWriter.ts`. Embedding those into the HTML directly would technically work for ~1 year, but the URLs eventually rot and there's no good moment to refresh them. Re-signing on each render with a 1-hour TTL is simple and correct.
 
 The route is `GET /p/:token`, served from `pipeline/src/routes/sharePage.ts`, and explicitly does NOT query `research_contexts`, `citations`, or `qa_sessions`. A test asserts this (see Tests below).
 
@@ -201,16 +209,24 @@ Single HTML template string. No JS framework. ~150 lines including styles.
     <!-- Open Graph -->
     <meta property="og:title" content="{topic}" />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="{signed cover URL or default-og.png}" />
+    <meta property="og:image" content="{signed cover URL when has_cover, else absolute /og/default.png}" />
     <meta property="og:url" content="{absolute share URL}" />
     <meta property="og:description" content="Listen to this Katavo episode." />
     <meta property="og:audio" content="{signed audio URL}" />
     <meta property="og:audio:type" content="audio/mpeg" />
+    <!--
+      og:audio rots after 1 hour because the embedded URL is freshly signed
+      with that TTL. Social embed players that cache the iframe metadata
+      will return 403 after expiry. Acceptable: the in-page <audio>
+      element re-signs on each page render and works forever; the embed
+      is a fresh-share-only experience. Keeping the tag so messaging
+      apps that DO inline-play (iMessage) work on first share.
+    -->
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="{topic}" />
-    <meta name="twitter:image" content="{cover_url or default-og.png}" />
+    <meta name="twitter:image" content="{signed cover URL when has_cover, else absolute /og/default.png}" />
 
     <style>{inline CSS, paper-light editorial palette}</style>
   </head>
@@ -220,14 +236,12 @@ Single HTML template string. No JS framework. ~150 lines including styles.
     </header>
 
     <main>
-      {cover image if cover_url present}
+      {cover image if has_cover}
 
       <h1 class="topic">{topic}</h1>
       <p class="meta">{duration} min · {chapter count} chapters</p>
 
-      <audio id="player" controls preload="metadata">
-        <source src="{signed audio URL}" type="audio/mpeg" />
-      </audio>
+      <audio id="player" controls preload="metadata" src="{signed audio URL for is_root row}"></audio>
 
       <section class="chapters">
         <h2 class="eyebrow">Chapters</h2>
@@ -249,10 +263,10 @@ Single HTML template string. No JS framework. ~150 lines including styles.
     </main>
 
     <footer>
-      <p>Made with Katavo · Generate your own</p>
+      <p>Made with Katavo. Generate your own.</p>
       <div class="store-badges">
-        <a href="{App Store URL}"><img src="/og/app-store-badge.svg" alt="Download on the App Store" /></a>
-        <a href="{Play Store URL}"><img src="/og/play-store-badge.svg" alt="Get it on Google Play" /></a>
+        <a href="{App Store URL}"><img src="/og/app-store.svg" alt="Download on the App Store" /></a>
+        <a href="{Play Store URL}"><img src="/og/play-store.svg" alt="Get it on Google Play" /></a>
       </div>
     </footer>
 
@@ -261,9 +275,12 @@ Single HTML template string. No JS framework. ~150 lines including styles.
       // 1. Chapter taps call audio.currentTime = data-seek and audio.play().
       // 2. Episode taps:
       //    a. Pause current audio.
-      //    b. Update <source>.src to the new episode's signed URL.
-      //    c. Call audio.load(). This is required on iOS Safari after a source
-      //       swap, otherwise the element keeps the old buffer and seek breaks.
+      //    b. Set audio.src directly to the new episode's signed URL (do NOT
+      //       update a <source> child). On iOS Safari, swapping the src
+      //       attribute of a <source> element is unreliable; setting the
+      //       parent audio element's src and calling load() is the
+      //       documented swap pattern.
+      //    c. Call audio.load(). Forces the new resource to be fetched.
       //    d. Replace chapter list HTML from a window.__EPISODES__ blob
       //       inlined in the page (id -> {topic, chapters, audioUrl}).
       //    e. Update the document title and topic heading.
@@ -303,7 +320,9 @@ The route response is **not cached** at the CDN/edge layer:
 - Cover URLs use the same re-sign-on-render approach, with the same TTL.
 - Render is fast (one RPC call, N signed-URL calls where N is small, then template render; under 100ms in practice).
 
-Cache headers: `Cache-Control: no-store`. Acceptable for v1 traffic levels. If Railway eventually proxies through a CDN, we need an explicit override there to honor `no-store` since per-request signed URLs cannot be CDN-cached.
+Cache headers: `Cache-Control: no-store`. Acceptable for v1 traffic levels. Trade-off: link-preview crawlers (iMessage, Slack, Twitter card validators) re-fetch on every preview render and re-pay the RPC plus signing cost. If preview traffic becomes meaningful, a v2 optimization is `Cache-Control: private, max-age=300` for the HTML only, keeping signed URLs on short TTLs. Skipped for v1.
+
+If Railway eventually proxies through a CDN, we need an explicit override there to honor `no-store` since per-request signed URLs cannot be CDN-cached.
 
 ---
 
@@ -329,6 +348,7 @@ The mobile app reads the share base from env (see the share invocation snippet a
 | Owner soft-deletes a shared podcast | Cascade trigger from migration 00021 also soft-deletes descendants; share link 404s. Restoring the parent un-soft-deletes the tree; the same link works again |
 | Owner re-shares after deleting the row entirely | Hard delete is destructive; row is gone, token is gone. New row, new token if re-generated |
 | Owner expands a shared podcast after sharing | New descendants appear on the share page on the next request. No special handling needed; the live-tree query picks them up |
+| In-flight descendant (status != 'complete') exists | RPC filter omits it. "More from this series" lists only completed children. Once the in-flight one finishes, it appears on the next render |
 | Bot crawler fetches a share URL | Public route serves it. Robots.txt isn't strictly needed since URLs are unguessable, but we add `<meta name="robots" content="noindex,nofollow">` to keep them out of search engines opportunistically |
 | User taps Share on an in-flight podcast | NavRow hidden, see above. Defense-in-depth: the issue-token endpoint also rejects non-complete podcasts with 409 |
 | Issue-token endpoint called for a podcast the caller doesn't own | 403. The route asserts `user_id = caller` before any UPDATE |
@@ -342,20 +362,23 @@ The mobile app reads the share base from env (see the share invocation snippet a
 | Path | Purpose |
 |---|---|
 | `supabase/migrations/00022_share_token.sql` | Add `share_token` column, partial unique index, and `get_shared_tree(text)` RPC (SECURITY DEFINER, service_role only) |
-| `pipeline/src/routes/sharePage.ts` | Hono route `GET /p/:token`. Calls the RPC, signs URLs, renders the HTML template |
+| `pipeline/src/routes/sharePage.ts` | Hono route `GET /p/:token`. Calls the RPC, rebuilds storage paths, signs URLs, renders the HTML template |
 | `pipeline/src/routes/sharePage.test.ts` | Integration tests (skipped when `envReady` is false): valid token returns 200 with HTML, unknown token returns 404, soft-deleted returns 404, descendants included, route works for a podcast owned by a different user, route never queries `research_contexts`/`citations`/`qa_sessions` |
-| `pipeline/src/routes/issueShareToken.ts` | Hono route `POST /api/share/:podcastId`. Authed via existing Supabase JWT helper. Verifies ownership, issues token via `crypto.randomBytes`, returns `{ token }` |
+| `pipeline/src/routes/issueShareToken.ts` | Hono route `POST /api/share-podcast/:podcastId`. Authed via the existing `userAuth` middleware. Verifies ownership, issues token via `crypto.randomBytes`, returns `{ token }` |
 | `pipeline/src/routes/issueShareToken.test.ts` | Integration tests: happy path returns token, idempotent on second call, 403 for non-owner, 409 for in-flight podcast, 401 without JWT |
-| `pipeline/public/og-default.png` | 1200x630 default OG image for podcasts without cover art |
-| `pipeline/public/badges/app-store.svg` | Apple App Store badge |
-| `pipeline/public/badges/play-store.svg` | Google Play Store badge |
-| `mobile/src/components/ShareNavRow.tsx` | NavRow under Research in the player. Handles issue-token API call and share-sheet invocation |
+| `pipeline/public/og/default.png` | 1200x630 default OG image for podcasts without cover art |
+| `pipeline/public/og/app-store.svg` | Apple App Store badge |
+| `pipeline/public/og/play-store.svg` | Google Play Store badge |
+| `mobile/src/components/NavRow.tsx` | Shared primitive that takes `{ eyebrow, title, subtitle?, onPress, accessibilityLabel, eyebrowColor? }`. Renders the divider, pressable row, body, chevron. |
+| `mobile/src/components/ShareNavRow.tsx` | Uses `<NavRow />` with subtitle. Handles issue-token API call, share-sheet invocation, error Alert |
 
 ### Modified
 
 | Path | What changes |
 |---|---|
-| `pipeline/src/server.ts` | Mount `GET /p/:token`, `POST /api/share/:podcastId`, and `GET /og/*` static file serving |
+| `pipeline/src/server.ts` | Mount `app.use("/og/*", serveStatic({ root: "./public" }))` from `@hono/node-server/serve-static` for the OG image and store badges. Mount `app.route("/p", sharePageRoute)` and `app.route("/api/share-podcast", issueShareTokenRoute)` alongside the existing `/api/*` routes |
+| `pipeline/src/middleware/auth.ts` | No change (existing `userAuth` is reused) |
+| `mobile/src/components/ResearchNavRow.tsx` | Replace its inline pressable layout with `<NavRow eyebrow="Research" title="Sources behind this episode" onPress={...} />`. Logic (tier gating, redirect) stays intact |
 | `mobile/app/player/[id]/index.tsx` | Mount `<ShareNavRow />` below `<ResearchNavRow />` inside the chapter ScrollView |
 | `mobile/src/hooks/usePodcasts.ts` | Add `share_token` to the select and `shareToken: string \| null` to the `Podcast` type; expose an `updateShareToken(id, token)` helper that patches the cached row after a successful issue-token call |
 | `mobile/src/types/database.ts` | Add `share_token: string \| null` to podcasts Row/Insert/Update and the `get_shared_tree` function signature (regenerated via `supabase gen types typescript`) |
@@ -371,8 +394,7 @@ The mobile app reads the share base from env (see the share invocation snippet a
 ## Operational notes
 
 - **Custom domain.** Once Katavo points a custom domain at Railway (e.g. `katavo.co`), update `EXPO_PUBLIC_SHARE_BASE_URL` in EAS and cut a new build. `EXPO_PUBLIC_*` vars are baked at build time, so a new build is required. Existing share tokens keep working since the route path doesn't change.
-- **Default OG image.** Generic default OG image (1200x630 PNG) for podcasts without cover art. Lives at `pipeline/public/og-default.png` and served via Hono static file middleware.
-- **Store badge assets.** Official Apple/Google store badges (SVG) shipped with the server, at `pipeline/public/badges/app-store.svg` and `play-store.svg`.
+- **Static assets.** OG image and store badges live under `pipeline/public/og/`. The server mounts `serveStatic({ root: "./public" })` at `/og/*`, so `/og/default.png`, `/og/app-store.svg`, `/og/play-store.svg` are publicly fetchable. `serveStatic` comes from `@hono/node-server/serve-static`, already a dependency.
 - **Migration number.** 00022 is next at the time of writing (00021 was the cascade soft-delete migration). Verify before applying.
 - **CDN.** Railway does not currently proxy through a CDN. If we add one, set an explicit `no-store` override there since signed URLs in the body cannot be CDN-cached.
 
@@ -382,7 +404,7 @@ The mobile app reads the share base from env (see the share invocation snippet a
 
 ### `pipeline/src/routes/issueShareToken.test.ts` (integration, gated by `envReady`)
 
-- 200 with `{ token }` for the podcast owner; token matches `^[A-Za-z0-9_-]{9,10}$`.
+- 200 with `{ token }` for the podcast owner; token matches `^[A-Za-z0-9_-]{10}$` (`crypto.randomBytes(7).toString("base64url")` always yields exactly 10 chars).
 - Calling the endpoint twice for the same podcast returns the same token (idempotent).
 - 403 when the caller is not the owner.
 - 409 when the podcast is not in `status = 'complete'`.
