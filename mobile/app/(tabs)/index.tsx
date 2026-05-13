@@ -22,6 +22,7 @@ import {
   type RetryErrorAction,
 } from "../../src/components/RetryErrorBanner";
 import { PodcastActionSheet } from "../../src/components/PodcastActionSheet";
+import { OutOfCreditsSheet } from "../../src/components/OutOfCreditsSheet";
 import { submitPodcast } from "../../src/services/podcast";
 import { color, space, text } from "../../src/theme/tokens";
 
@@ -45,6 +46,10 @@ export default function Library() {
   // RETRY_ERROR_DURATION_MS so the banner's countdown rule matches.
   const [retryError, setRetryError] = useState<RetryError | null>(null);
   const retryErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The podcast waiting on a credit purchase or upgrade. Drives the
+  // OutOfCreditsSheet visibility; cleared on close, after the credit
+  // purchase succeeds (and retry fires), or after the user picks upgrade.
+  const [outOfCreditsRetry, setOutOfCreditsRetry] = useState<Podcast | null>(null);
 
   useEffect(() => {
     return () => {
@@ -124,7 +129,7 @@ export default function Library() {
             onPress: () => {
               setRetryError(null);
               if (retryErrorTimer.current) clearTimeout(retryErrorTimer.current);
-              router.push("/plans");
+              setOutOfCreditsRetry(podcast);
             },
           },
         });
@@ -204,6 +209,25 @@ export default function Library() {
         topic={actionTarget?.topic ?? ""}
         onDelete={handleSheetDelete}
         onDismiss={() => setActionTarget(null)}
+      />
+
+      <OutOfCreditsSheet
+        visible={outOfCreditsRetry !== null}
+        topic={outOfCreditsRetry?.topic ?? ""}
+        onClose={() => setOutOfCreditsRetry(null)}
+        onPurchased={async () => {
+          const podcast = outOfCreditsRetry;
+          setOutOfCreditsRetry(null);
+          if (podcast) await handleRetry(podcast);
+        }}
+        onUpgrade={() => {
+          setOutOfCreditsRetry(null);
+          router.push("/plans");
+        }}
+        onError={(failure) => {
+          setOutOfCreditsRetry(null);
+          showRetryError({ message: failure.title });
+        }}
       />
     </SafeAreaView>
   );
