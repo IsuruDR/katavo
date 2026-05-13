@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -7,7 +7,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { usePodcasts } from "../../src/hooks/usePodcasts";
 import type { Podcast } from "../../src/hooks/usePodcasts";
 import {
@@ -17,9 +17,20 @@ import {
 import { PodcastRow } from "../../src/components/PodcastRow";
 import { SearchField } from "../../src/components/SearchField";
 import { UndoBanner } from "../../src/components/UndoBanner";
+import {
+  RetryErrorBanner,
+  type RetryErrorAction,
+} from "../../src/components/RetryErrorBanner";
 import { PodcastActionSheet } from "../../src/components/PodcastActionSheet";
 import { submitPodcast } from "../../src/services/podcast";
 import { color, space, text } from "../../src/theme/tokens";
+
+const RETRY_ERROR_DURATION_MS = 6000;
+
+interface RetryError {
+  message: string;
+  action?: RetryErrorAction;
+}
 
 const SEARCH_THRESHOLD = 8;
 
@@ -27,8 +38,19 @@ export default function Library() {
   const { podcasts, loading, refreshing, refresh, softDelete, restore } =
     usePodcasts();
 
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [actionTarget, setActionTarget] = useState<Podcast | null>(null);
+  // Transient banner for retry-submit failures. Auto-clears after
+  // RETRY_ERROR_DURATION_MS so the banner's countdown rule matches.
+  const [retryError, setRetryError] = useState<RetryError | null>(null);
+  const retryErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (retryErrorTimer.current) clearTimeout(retryErrorTimer.current);
+    };
+  }, []);
 
   const { pending, requestDelete, undo } = useUndoableDelete({
     softDelete,
@@ -71,10 +93,19 @@ export default function Library() {
     requestDelete({ id: podcast.id, topic: podcast.topic });
   };
 
+  const showRetryError = useCallback((error: RetryError) => {
+    if (retryErrorTimer.current) clearTimeout(retryErrorTimer.current);
+    setRetryError(error);
+    retryErrorTimer.current = setTimeout(() => {
+      setRetryError(null);
+    }, RETRY_ERROR_DURATION_MS);
+  }, []);
+
   // Tap on a failed row re-submits the same topic + clarifying answers.
   // On success, soft-delete the failed row so the library shows just the
-  // fresh queued attempt at top. On submit failure, leave the failed row
-  // visible so the user can try again or surface the error.
+  // fresh queued attempt at top. On submit failure, surface the error
+  // via the RetryErrorBanner and leave the failed row visible so the
+  // user can try again.
   const handleRetry = async (podcast: Podcast) => {
     try {
       await submitPodcast({
@@ -82,8 +113,24 @@ export default function Library() {
         clarifyingAnswers: podcast.clarifyingAnswers,
       });
       await softDelete(podcast.id);
-    } catch (err) {
-      console.warn("[Library] retry submit failed:", err);
+    } catch (err: any) {
+      const rawMessage: string = err?.message ?? "Couldn't retry. Try again.";
+      const isCreditsError = /credits remaining|purchase more credits/i.test(rawMessage);
+      if (isCreditsError) {
+        showRetryError({
+          message: "You're out of credits.",
+          action: {
+            label: "Buy credits",
+            onPress: () => {
+              setRetryError(null);
+              if (retryErrorTimer.current) clearTimeout(retryErrorTimer.current);
+              router.push("/plans");
+            },
+          },
+        });
+      } else {
+        showRetryError({ message: rawMessage });
+      }
     }
   };
 
@@ -141,6 +188,14 @@ export default function Library() {
           topic={pending.topic}
           onUndo={undo}
           durationMs={UNDO_WINDOW_MS}
+        />
+      )}
+
+      {retryError && !pending && (
+        <RetryErrorBanner
+          message={retryError.message}
+          action={retryError.action}
+          durationMs={RETRY_ERROR_DURATION_MS}
         />
       )}
 
