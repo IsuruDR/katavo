@@ -440,6 +440,7 @@ The mobile harness still has no test framework. ShareNavRow has no unit test for
 | Search engine indexes share URLs | URLs are unguessable; `<meta robots noindex>` is belt-and-braces. |
 | Owner wants to unshare but the model doesn't support it | Out of scope for v1. We graduate to revoke later if demand surfaces. |
 | Cover URLs leak via OG previews | The user shared the link knowing it's public; covered by the NavRow subtitle. |
+| Link recipient can correlate same-creator podcasts via user_id in the signed URL path | Accepted for v1. The signed URL embeds `${user_id}/${id}.mp3` so anyone with browser devtools can read the owner's user_id from two share links and tell they're from the same account. user_id alone isn't a credential (RLS gates everything), and the share-as-growth framing makes link recipients an audience we want talking to each other. Future v2 could re-key storage paths to a hash unrelated to user_id. |
 
 ---
 
