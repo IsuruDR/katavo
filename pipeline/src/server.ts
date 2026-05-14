@@ -14,6 +14,7 @@ setMaxListeners(20);
 
 import { generateQuestionsRoute } from "./routes/generateQuestions.js";
 import { issueShareTokenRoute } from "./routes/issueShareToken.js";
+import { sharePageRoute } from "./routes/sharePage.js";
 import { submitPodcastRoute, setJobManager } from "./routes/submitPodcast.js";
 import { notifyCompleteRoute } from "./routes/notifyComplete.js";
 import { revenuecatWebhookRoute } from "./routes/revenuecatWebhook.js";
@@ -45,6 +46,7 @@ app.route("/api/revenucat-webhook", revenuecatWebhookRoute);
 app.route("/api/start-deep-dive", startDeepDiveRoute);
 app.route("/api/end-deep-dive", endDeepDiveRoute);
 app.route("/api/cron/expansion-prompts", cronExpansionPromptsRoute);
+app.route("/p", sharePageRoute);
 
 // Job manager — in-process pipeline execution with retry + backoff
 const jobManager = createJobManager();
