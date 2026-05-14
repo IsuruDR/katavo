@@ -68,6 +68,7 @@ export type Database = {
           id: string
           langgraph_run_id: string | null
           parent_podcast_id: string | null
+          share_token: string | null
           source_chapter_title: string | null
           status: Database["public"]["Enums"]["podcast_status"]
           status_history: Json
@@ -94,6 +95,7 @@ export type Database = {
           id?: string
           langgraph_run_id?: string | null
           parent_podcast_id?: string | null
+          share_token?: string | null
           source_chapter_title?: string | null
           status?: Database["public"]["Enums"]["podcast_status"]
           status_history?: Json
@@ -120,6 +122,7 @@ export type Database = {
           id?: string
           langgraph_run_id?: string | null
           parent_podcast_id?: string | null
+          share_token?: string | null
           source_chapter_title?: string | null
           status?: Database["public"]["Enums"]["podcast_status"]
           status_history?: Json
@@ -335,7 +338,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_shared_tree: {
+        Args: { p_token: string }
+        Returns: {
+          id: string
+          user_id: string
+          parent_podcast_id: string | null
+          topic: string
+          has_cover: boolean
+          chapter_markers: Json
+          duration_seconds: number | null
+          status: string
+          is_root: boolean
+        }[]
+      }
     }
     Enums: {
       billing_period: "monthly" | "annual"
