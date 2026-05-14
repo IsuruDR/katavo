@@ -363,9 +363,9 @@ The mobile app reads the share base from env (see the share invocation snippet a
 |---|---|
 | `supabase/migrations/00022_share_token.sql` | Add `share_token` column, partial unique index, and `get_shared_tree(text)` RPC (SECURITY DEFINER, service_role only) |
 | `pipeline/src/routes/sharePage.ts` | Hono route `GET /p/:token`. Calls the RPC, rebuilds storage paths, signs URLs, renders the HTML template |
-| `pipeline/src/routes/sharePage.test.ts` | Integration tests (skipped when `envReady` is false): valid token returns 200 with HTML, unknown token returns 404, soft-deleted returns 404, descendants included, route works for a podcast owned by a different user, route never queries `research_contexts`/`citations`/`qa_sessions` |
+| `pipeline/tests/sharePage.test.ts` | Integration tests (skipped when `envReady` is false): valid token returns 200 with HTML, unknown token returns 404, soft-deleted returns 404, descendants included, route works for a podcast owned by a different user, route never queries `research_contexts`/`citations`/`qa_sessions` |
 | `pipeline/src/routes/issueShareToken.ts` | Hono route `POST /api/share-podcast/:podcastId`. Authed via the existing `userAuth` middleware. Verifies ownership, issues token via `crypto.randomBytes`, returns `{ token }` |
-| `pipeline/src/routes/issueShareToken.test.ts` | Integration tests: happy path returns token, idempotent on second call, 403 for non-owner, 409 for in-flight podcast, 401 without JWT |
+| `pipeline/tests/issueShareToken.test.ts` | Integration tests: happy path returns token, idempotent on second call, 403 for non-owner, 409 for in-flight podcast, 401 without JWT |
 | `pipeline/public/og/default.png` | 1200x630 default OG image for podcasts without cover art |
 | `pipeline/public/og/app-store.svg` | Apple App Store badge |
 | `pipeline/public/og/play-store.svg` | Google Play Store badge |
@@ -403,7 +403,7 @@ The mobile app reads the share base from env (see the share invocation snippet a
 
 ## Tests
 
-### `pipeline/src/routes/issueShareToken.test.ts` (integration, gated by `envReady`)
+### `pipeline/tests/issueShareToken.test.ts` (integration, gated by `envReady`)
 
 - 200 with `{ token }` for the podcast owner; token matches `^[A-Za-z0-9_-]{10}$` (`crypto.randomBytes(7).toString("base64url")` always yields exactly 10 chars).
 - Calling the endpoint twice for the same podcast returns the same token (idempotent).
@@ -412,7 +412,7 @@ The mobile app reads the share base from env (see the share invocation snippet a
 - 401 when no `Authorization` header is present.
 - After a successful call, the podcasts row has `share_token` set.
 
-### `pipeline/src/routes/sharePage.test.ts` (integration, gated by `envReady`)
+### `pipeline/tests/sharePage.test.ts` (integration, gated by `envReady`)
 
 - 200 with HTML body for a valid token.
 - 404 for an unknown token.

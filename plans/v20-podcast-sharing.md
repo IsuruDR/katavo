@@ -87,7 +87,7 @@ GRANT EXECUTE ON FUNCTION public.get_shared_tree(text) TO service_role;
 
 - [ ] **Step 2: Apply the migration to the remote project**
 
-Use the Supabase MCP `mcp__supabase__apply_migration` tool with the contents above. Name the migration `00022_share_token`. Confirm `mcp__supabase__list_migrations` shows it applied.
+Use the Supabase MCP `mcp__supabase__apply_migration` tool with the contents above. Name the migration `00022_share_token`. The MCP tool only applies remotely; the local file at `supabase/migrations/00022_share_token.sql` is what step 1 just created. Confirm `mcp__supabase__list_migrations` shows it applied.
 
 - [ ] **Step 3: Verify column and RPC exist**
 
@@ -186,21 +186,9 @@ grep -n "\.select(" "/Users/isuru/personal/AI Podcast App/mobile/src/hooks/usePo
 
 For each select that returns rows mapped through `toPodcast`, add `share_token` to the comma-separated column list. If the existing select uses `select("*")`, leave it.
 
-- [ ] **Step 4: Add updateShareToken cache helper**
+**Note (no updateShareToken helper):** A previous draft of this plan added an `updateShareToken` cache helper on `usePodcasts`. We dropped it because the player screen (`mobile/app/player/[id]/index.tsx:53-62`) fetches its own row via `.from("podcasts").select("*").eq("id", id).single()` and stores the result in a local `useState<Podcast | null>`. It never reads from the hook's array. The ShareNavRow's `onTokenIssued` callback writes to that local `setPodcast` directly (see Chunk 4 Task 14), so any helper on the hook would be dead code.
 
-In the hook's returned object, expose an imperative helper that patches the in-memory podcast row after the issue-token endpoint resolves. The hook already has a podcasts state array; add a setter that finds the row by id and merges `{ shareToken: token }`:
-
-```ts
-const updateShareToken = useCallback((id: string, token: string) => {
-  setPodcasts((prev) =>
-    prev.map((p) => (p.id === id ? { ...p, shareToken: token } : p)),
-  );
-}, []);
-```
-
-Place it next to the other callbacks (`refresh`, etc.) and include it in the return.
-
-- [ ] **Step 5: Run typecheck**
+- [ ] **Step 4: Run typecheck**
 
 ```bash
 cd mobile && npx tsc --noEmit
@@ -208,7 +196,7 @@ cd mobile && npx tsc --noEmit
 
 Expected: clean.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add mobile/src/hooks/usePodcasts.ts
@@ -216,8 +204,7 @@ git commit -m "$(cat <<'EOF'
 feat(mobile): thread share_token through usePodcasts
 
 Adds share_token to the row and shareToken to the app-level Podcast
-shape with a corresponding mapper update. Exposes updateShareToken
-so the share flow can patch the cached row without a refetch.
+shape with a corresponding mapper update.
 EOF
 )"
 ```
@@ -780,7 +767,8 @@ function renderNotFound(): string {
   <main>
     <h1>This podcast isn't available.</h1>
     <p>The link may have expired or the podcast was removed.</p>
-    <p><a href="https://katavo.co">Visit Katavo</a></p>
+    <!-- Brand link omitted until custom domain ships. -->
+    <p>Made with Katavo.</p>
   </main>
 </body>
 </html>`;
@@ -948,7 +936,7 @@ function escapeScriptJson(value: unknown): string {
 }
 
 function formatMinutes(seconds: number | null): string {
-  if (!seconds) return "";
+  if (seconds === null || seconds <= 0) return "";
   const m = Math.round(seconds / 60);
   return `${m} min`;
 }
@@ -1023,6 +1011,11 @@ export function renderSharePage(input: ShareTemplateInput): string {
     <meta property="og:description" content="Listen to this Katavo episode." />
     <meta property="og:audio" content="${htmlEscape(root.audioUrl)}" />
     <meta property="og:audio:type" content="audio/mpeg" />
+    <!-- og:audio rots after the 1h signed URL TTL; the in-page <audio>
+         re-signs on each page render and works forever. Acceptable
+         trade-off so messaging apps that inline-play (iMessage) work
+         on first share. -->
+
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${htmlEscape(root.topic)}" />
@@ -1054,7 +1047,7 @@ export function renderSharePage(input: ShareTemplateInput): string {
   <body>
     <header><span class="brand">Katavo</span></header>
     <main>
-      ${root.coverUrl ? `<img class="cover" src="${htmlEscape(root.coverUrl)}" alt="" />` : ""}
+      ${root.coverUrl ? `<img class="cover" src="${htmlEscape(root.coverUrl)}" alt="${htmlEscape(root.topic)} cover" />` : ""}
       <h1 class="topic" id="topic">${htmlEscape(root.topic)}</h1>
       <p class="meta-row" id="meta-row">${formatMinutes(root.durationSeconds)} · ${root.chapters.length} chapters</p>
       <audio id="player" controls preload="metadata" src="${htmlEscape(root.audioUrl)}"></audio>
@@ -1209,7 +1202,8 @@ function renderNotFound(): string {
   <main>
     <h1>This podcast isn't available.</h1>
     <p>The link may have expired or the podcast was removed.</p>
-    <p><a href="https://katavo.co">Visit Katavo</a></p>
+    <!-- Brand link omitted until custom domain ships. -->
+    <p>Made with Katavo.</p>
   </main>
 </body>
 </html>`;
@@ -1275,9 +1269,15 @@ it("HTML-escapes the topic so <script> in user input cannot break out", async ()
 });
 
 it("never queries research_contexts, citations, or qa_sessions", async () => {
-  const forbiddenTable = vi.fn(() => {
-    throw new Error("share page must not call .from() on relational tables");
-  });
+  // Stronger than "from() should never be called": we explicitly assert
+  // the three forbidden table names are never the argument. This survives
+  // any future addition of a benign .from("podcasts") read without quietly
+  // letting research tables sneak in.
+  const fromSpy = vi.fn(() => ({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  }));
   mockCreateClient.mockReturnValue(
     buildSupabaseMock({
       rpcRows: [
@@ -1293,11 +1293,42 @@ it("never queries research_contexts, citations, or qa_sessions", async () => {
           is_root: true,
         },
       ],
-      spy: { from: forbiddenTable },
+      spy: { from: fromSpy },
     }),
   );
   await buildApp().request("/p/abcdefghij");
-  expect(forbiddenTable).not.toHaveBeenCalled();
+  expect(fromSpy).not.toHaveBeenCalledWith("research_contexts");
+  expect(fromSpy).not.toHaveBeenCalledWith("citations");
+  expect(fromSpy).not.toHaveBeenCalledWith("qa_sessions");
+});
+
+it("works for a podcast owned by a user different from the test context", async () => {
+  // The route uses the service-role client, so ownership is irrelevant.
+  // This test catches the accidental wiring to an anon client, where
+  // RLS would silently 404 the row.
+  mockCreateClient.mockReturnValue(
+    buildSupabaseMock({
+      rpcRows: [
+        {
+          id: "p1",
+          user_id: "different-user-zzz",
+          parent_podcast_id: null,
+          topic: "Cross user",
+          has_cover: false,
+          chapter_markers: [],
+          duration_seconds: 60,
+          status: "complete",
+          is_root: true,
+        },
+      ],
+      signedAudio: "https://supabase.example/storage/podcast-audio/different-user-zzz/p1.mp3?token=zzz",
+    }),
+  );
+  const res = await buildApp().request("/p/abcdefghij");
+  expect(res.status).toBe(200);
+  const html = await res.text();
+  expect(html).toContain("Cross user");
+  expect(html).toContain("different-user-zzz/p1.mp3");
 });
 
 it("includes completed descendants in 'More from this series'", async () => {
@@ -1342,7 +1373,7 @@ it("includes completed descendants in 'More from this series'", async () => {
 cd pipeline && npx vitest run tests/sharePage.test.ts
 ```
 
-Expected: 6 passed.
+Expected: 7 passed.
 
 - [ ] **Step 5: Manual end-to-end smoke**
 
@@ -1359,6 +1390,14 @@ kill $SERVER_PID
 ```
 
 Expected: a browser tab opens the share page with cover, topic, audio controls, chapter list, footer.
+
+Verify the rendered HTML embeds a fresh signed URL (not the column value):
+
+```bash
+curl -s "http://localhost:3000/p/$TOKEN" | grep -oE 'podcast-audio/[^"]+token=[^"]+' | head -1
+```
+
+Expected: a path like `podcast-audio/<user_id>/<podcast_id>.mp3?token=...` confirming `createSignedUrl` ran.
 
 - [ ] **Step 6: Commit**
 
@@ -1683,7 +1722,7 @@ In `mobile/app/player/[id]/index.tsx`:
 import { ShareNavRow } from "../../../src/components/ShareNavRow";
 ```
 
-2. The player screen reads the current podcast via `usePodcasts` (or its existing context). Find where `podcast.status` and `podcast.topic` are in scope. That's the same place that already passes props to `<ResearchNavRow />`. The hook also returns `updateShareToken` (Task 2). Pull both into scope (e.g. add to the existing destructure or call `usePodcasts()` once at the top of the component if it isn't already there).
+2. The player screen already has `podcast` (a `Podcast | null`) and `setPodcast` from its local `useState` (lines 44-62). After Chunk 1, `podcast.shareToken` is already populated by `toPodcast`. We use the local state setter to flip the NavRow's "Share this episode" / "Copy link" state after token issuance, since the player screen doesn't read from the `usePodcasts` array.
 
 3. Insert the new row immediately after `<ResearchNavRow ... />` (around line 262):
 
@@ -1693,7 +1732,9 @@ import { ShareNavRow } from "../../../src/components/ShareNavRow";
   podcastStatus={podcast.status}
   topic={podcast.topic}
   shareToken={podcast.shareToken}
-  onTokenIssued={(token) => updateShareToken(String(id), token)}
+  onTokenIssued={(token) =>
+    setPodcast((p) => (p ? { ...p, shareToken: token } : p))
+  }
 />
 ```
 
@@ -1703,7 +1744,7 @@ import { ShareNavRow } from "../../../src/components/ShareNavRow";
 cd mobile && npx tsc --noEmit
 ```
 
-Expected: clean. If the screen doesn't already have `updateShareToken` in scope, plumb it through wherever `podcast` comes from.
+Expected: clean.
 
 - [ ] **Step 3: Manual smoke on a dev build**
 
