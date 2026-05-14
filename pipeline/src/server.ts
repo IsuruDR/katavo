@@ -12,6 +12,7 @@ import "dotenv/config";
 setMaxListeners(20);
 
 import { generateQuestionsRoute } from "./routes/generateQuestions.js";
+import { issueShareTokenRoute } from "./routes/issueShareToken.js";
 import { submitPodcastRoute, setJobManager } from "./routes/submitPodcast.js";
 import { notifyCompleteRoute } from "./routes/notifyComplete.js";
 import { revenuecatWebhookRoute } from "./routes/revenuecatWebhook.js";
@@ -31,6 +32,7 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 
 // Routes
 app.route("/api/generate-questions", generateQuestionsRoute);
+app.route("/api/share-podcast", issueShareTokenRoute);
 app.route("/api/submit-podcast", submitPodcastRoute);
 app.route("/api/notify-complete", notifyCompleteRoute);
 app.route("/api/revenucat-webhook", revenuecatWebhookRoute);
