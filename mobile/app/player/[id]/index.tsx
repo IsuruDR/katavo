@@ -24,6 +24,7 @@ import { useSubscription } from "../../../src/hooks/useSubscription";
 import { AudioPlayer } from "../../../src/components/AudioPlayer";
 import { ChapterMarkers } from "../../../src/components/ChapterMarkers";
 import { ResearchNavRow } from "../../../src/components/ResearchNavRow";
+import { ShareNavRow } from "../../../src/components/ShareNavRow";
 import { DiveBar } from "../../../src/components/DiveBar";
 import { ExpandActionSheet } from "../../../src/components/ExpandActionSheet";
 import { ExpansionQueuedSheet } from "../../../src/components/ExpansionQueuedSheet";
@@ -259,6 +260,15 @@ export default function PlayerScreen() {
           <ResearchNavRow
             podcastId={String(id)}
             podcastStatus={podcast.status}
+          />
+          <ShareNavRow
+            podcastId={String(id)}
+            podcastStatus={podcast.status}
+            topic={podcast.topic}
+            shareToken={podcast.shareToken}
+            onTokenIssued={(token) =>
+              setPodcast((p) => (p ? { ...p, shareToken: token } : p))
+            }
           />
         </ScrollView>
 
