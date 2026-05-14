@@ -53,6 +53,9 @@ route.post("/:podcastId", userAuth, async (c) => {
       .is("share_token", null);
 
     if (updateErr) {
+      // Postgres unique-violation. Vanishingly unlikely given the 7.2e16
+      // keyspace, but retry once on the off chance two callers picked the
+      // same random bytes in the same millisecond.
       if (updateErr.code === "23505") continue;
       return c.json({ error: "issue failed" }, 500);
     }

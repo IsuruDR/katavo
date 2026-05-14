@@ -138,4 +138,39 @@ describe("POST /api/share-podcast/:podcastId", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).token).toBe("winnerXYZ_");
   });
+
+  it("retries once on 23505 unique-violation then succeeds", async () => {
+    // Custom mock: lookup returns owner row, first update errors with 23505,
+    // second update succeeds (count=1). Verifies the retry loop in the route.
+    const podcastSelect = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { id: "p1", user_id: "user-123", status: "complete", deleted_at: null, share_token: null },
+        error: null,
+      }),
+    };
+    const updateResults = [
+      { error: { code: "23505", message: "duplicate key" }, count: null },
+      { error: null, count: 1 },
+    ];
+    let updateCall = 0;
+    const makeUpdate = () => ({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue(updateResults[updateCall++]),
+    });
+    let fromCall = 0;
+    mockCreateClient.mockReturnValue({
+      from: vi.fn(() => {
+        if (fromCall++ === 0) return podcastSelect;
+        return makeUpdate();
+      }),
+    } as any);
+
+    const res = await buildApp().request("/api/share-podcast/p1", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).token).toMatch(/^[A-Za-z0-9_-]{10}$/);
+    expect(updateCall).toBe(2); // confirm retry actually happened
+  });
 });
