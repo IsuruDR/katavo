@@ -67,7 +67,12 @@ route.get("/:token", async (c) => {
     (d): d is ShareEpisode => d !== null,
   );
 
-  const shareBase = process.env.SHARE_PUBLIC_BASE_URL ?? `https://${c.req.header("host") ?? "katavo.co"}`;
+  // Never trust the Host header for OG URL building. A request with a
+  // forged Host could mint og:url / og:image pointing at attacker.com and
+  // poison link-preview metadata. Set SHARE_PUBLIC_BASE_URL in prod (e.g.
+  // https://podcasts-production-3b07.up.railway.app today, https://katavo.co
+  // once the domain ships); the default falls back to the brand domain.
+  const shareBase = process.env.SHARE_PUBLIC_BASE_URL ?? "https://katavo.co";
   const shareUrl = `${shareBase}/p/${token}`;
   const defaultOgImage = `${shareBase}/og/default.png`;
 
