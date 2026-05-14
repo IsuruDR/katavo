@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { setMaxListeners } from "node:events";
 import "dotenv/config";
 
@@ -29,6 +30,11 @@ app.use("*", cors());
 
 // Health check
 app.get("/health", (c) => c.json({ status: "ok" }));
+
+// Static assets for the share page (OG image, store badges). Lives in
+// `pipeline/public/og/`. serveStatic resolves `root` against process.cwd(),
+// so npm start / tsx watch must be invoked from the pipeline package root.
+app.use("/og/*", serveStatic({ root: "./public" }));
 
 // Routes
 app.route("/api/generate-questions", generateQuestionsRoute);
