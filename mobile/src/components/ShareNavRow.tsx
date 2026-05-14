@@ -10,11 +10,15 @@
  */
 import { useState } from "react";
 import { Alert, Share } from "react-native";
-import { supabase } from "../lib/supabase";
 import { NavRow } from "./NavRow";
+import { issueShareToken } from "../services/podcast";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const SHARE_BASE = process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? API_URL;
+// EXPO_PUBLIC_* values are baked at build time. When the custom domain
+// ships, set EXPO_PUBLIC_SHARE_BASE_URL in EAS and cut a new build;
+// until then we fall back to the pipeline URL since the share page is
+// served from the same Hono server.
+const SHARE_BASE =
+  process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? process.env.EXPO_PUBLIC_API_URL;
 
 interface Props {
   podcastId: string;
@@ -41,14 +45,7 @@ export function ShareNavRow({
     try {
       let token = shareToken;
       if (!token) {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`${API_URL}/api/share-podcast/${podcastId}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-        });
-        if (!res.ok) throw new Error(`share failed: ${res.status}`);
-        const body = await res.json();
-        token = body.token as string;
+        token = await issueShareToken(podcastId);
         onTokenIssued(token);
       }
       const shareUrl = `${SHARE_BASE}/p/${token}`;
@@ -59,7 +56,10 @@ export function ShareNavRow({
       });
     } catch (err) {
       console.warn("ShareNavRow tap failed:", err);
-      Alert.alert("Couldn't share", "Try again in a moment.");
+      Alert.alert(
+        "Couldn't share",
+        err instanceof Error && err.message ? err.message : "Try again in a moment.",
+      );
     } finally {
       setBusy(false);
     }
@@ -69,7 +69,9 @@ export function ShareNavRow({
     <NavRow
       eyebrow="Share"
       title={shareToken ? "Copy link" : "Share this episode"}
-      subtitle={shareToken ? "Audio and chapters are public" : "Audio and chapters become public"}
+      subtitle={
+        shareToken ? "Audio and chapters are public" : "Audio and chapters become public"
+      }
       onPress={onPress}
       accessibilityLabel={
         shareToken
