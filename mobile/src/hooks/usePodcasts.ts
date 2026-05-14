@@ -27,6 +27,7 @@ export interface PodcastRow {
   status_started_at: string | null;
   parent_podcast_id: string | null;
   source_chapter_title: string | null;
+  share_token: string | null;
   clarifying_answers: Array<{ q: string; a: string }> | null;
 }
 
@@ -45,6 +46,7 @@ export interface Podcast {
   statusStartedAt: string | null;
   parentPodcastId: string | null;
   sourceChapterTitle: string | null;
+  shareToken: string | null;
   clarifyingAnswers: Array<{ q: string; a: string }>;
 }
 
@@ -66,6 +68,7 @@ export function toPodcast(row: PodcastRow): Podcast {
     statusStartedAt: row.status_started_at ?? row.created_at,
     parentPodcastId: row.parent_podcast_id,
     sourceChapterTitle: row.source_chapter_title,
+    shareToken: row.share_token,
     clarifyingAnswers: row.clarifying_answers ?? [],
   };
 }
@@ -114,7 +117,7 @@ export function usePodcasts() {
         .select(`
           id, topic, status, audio_url, cover_url, duration_seconds, chapter_markers,
           has_ads, created_at, error_message, status_started_at,
-          parent_podcast_id, source_chapter_title, clarifying_answers
+          parent_podcast_id, source_chapter_title, share_token, clarifying_answers
         `)
         .eq("user_id", user.id)
         .is("deleted_at", null)

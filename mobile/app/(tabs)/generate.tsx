@@ -98,6 +98,7 @@ export default function Generate() {
         statusStartedAt: now,
         parentPodcastId: null,
         sourceChapterTitle: null,
+        shareToken: null,
         clarifyingAnswers: answers,
       });
       refreshSub();
