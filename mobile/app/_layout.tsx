@@ -75,13 +75,17 @@ function RootLayoutInner() {
       return;
     }
 
-    // Onboarding gate. One-way: only push INTO onboarding when voice is null.
-    // The reverse (onboarding -> tabs once voice is set) is handled by the
-    // onboarding screens themselves (voice.tsx redirects to /(tabs)/generate
-    // with a placeholder param). Auto-redirecting here races with that
-    // navigation and lands the user on the default tab (Library) without
-    // the placeholder. Edge case where the user kills the app on the voice
-    // screen with voice already set is handled by voice.tsx itself.
+    // Onboarding gate. One-way: only push INTO onboarding when voice is
+    // null. The reverse (onboarding -> tabs once voice is set) happens
+    // via voice.tsx's explicit router.replace after the user picks a
+    // voice. Auto-redirecting here would race that navigation and land
+    // the user on the default tab without the placeholder param.
+    //
+    // The cold-start race that used to fire this gate spuriously
+    // (profile=null because auth was still loading) is fixed in
+    // useProfile.tsx by gating its fetch on auth being settled. The
+    // gate here can trust profileLoading to be true until both auth and
+    // the profile fetch have actually returned.
     if (session && !profileLoading) {
       const needsOnboarding = !profile?.preferredVoice;
 

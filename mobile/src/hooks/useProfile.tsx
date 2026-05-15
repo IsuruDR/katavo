@@ -58,7 +58,7 @@ function toProfile(row: ProfileRow): Profile {
 }
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -78,6 +78,13 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
+    // Wait for auth to settle before doing anything. On cold start, `user`
+    // is null while supabase.auth.getSession() is in flight; running the
+    // fetch's !user branch in that window flips profileLoading to false
+    // with profile=null, which made the root-layout onboarding gate
+    // misfire when auth eventually resolved with a signed-in session.
+    if (authLoading) return;
+
     setLoading(true);
     fetch();
 
@@ -102,7 +109,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, fetch]);
+  }, [user, authLoading, fetch]);
 
   const setPreferredVoice = useCallback(
     async (voice: string) => {
