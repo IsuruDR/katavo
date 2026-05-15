@@ -173,28 +173,71 @@ route.post("/", userAuth, async (c) => {
 
     const hasAds = subscription.tier === "free";
 
-    // CAS credit deduction
-    const { data: updatedSub, error: deductError } = await serviceClient
-      .from("subscriptions")
-      .update({ credits_remaining: subscription.credits_remaining - 1 })
-      .eq("user_id", user.id)
-      .eq("credits_remaining", subscription.credits_remaining)
-      .gt("credits_remaining", 0)
-      .select("credits_remaining")
-      .single();
-
-    if (deductError && deductError.code !== "PGRST116") {
-      throw deductError;
+    // Two-bucket credit deduction (migration 00025). credits_remaining is the
+    // monthly bucket, reset by RevenueCat webhooks on every lifecycle event.
+    // bonus_credits is the signup welcome credit, never touched by webhooks.
+    // Deduct from monthly first (use-it-or-lose-it) and fall back to bonus
+    // only when monthly is empty. handle_podcast_failure refunds always to
+    // credits_remaining; the asymmetry nets out in the ledger and over the
+    // long run users come out ahead by a small amount, which is fine.
+    const bonusRemaining = subscription.bonus_credits ?? 0;
+    if (subscription.credits_remaining <= 0 && bonusRemaining <= 0) {
+      return c.json(
+        { error: "No credits remaining. Purchase more credits to continue." },
+        402,
+      );
     }
 
-    if (!updatedSub) {
+    let deductedBucket: "monthly" | "bonus" | null = null;
+    let casError: { code?: string; message?: string } | null = null;
+
+    if (subscription.credits_remaining > 0) {
+      const { data: cas, error } = await serviceClient
+        .from("subscriptions")
+        .update({ credits_remaining: subscription.credits_remaining - 1 })
+        .eq("user_id", user.id)
+        .eq("credits_remaining", subscription.credits_remaining)
+        .gt("credits_remaining", 0)
+        .select("credits_remaining")
+        .single();
+      if (error && error.code !== "PGRST116") {
+        casError = error;
+      }
+      if (cas) deductedBucket = "monthly";
+    }
+
+    if (!deductedBucket && bonusRemaining > 0) {
+      const { data: cas, error } = await serviceClient
+        .from("subscriptions")
+        .update({ bonus_credits: bonusRemaining - 1 })
+        .eq("user_id", user.id)
+        .eq("bonus_credits", bonusRemaining)
+        .gt("bonus_credits", 0)
+        .select("bonus_credits")
+        .single();
+      if (error && error.code !== "PGRST116") {
+        casError = error;
+      }
+      if (cas) deductedBucket = "bonus";
+    }
+
+    if (casError) {
+      throw casError;
+    }
+
+    if (!deductedBucket) {
+      // Both CAS attempts lost a race against a concurrent submit. Re-read
+      // the latest balance to decide between "out of credits" and "transient
+      // conflict, retry".
       const { data: currentSub } = await serviceClient
         .from("subscriptions")
-        .select("credits_remaining")
+        .select("credits_remaining, bonus_credits")
         .eq("user_id", user.id)
         .single();
 
-      if (!currentSub || currentSub.credits_remaining <= 0) {
+      const total =
+        (currentSub?.credits_remaining ?? 0) + (currentSub?.bonus_credits ?? 0);
+      if (total <= 0) {
         return c.json(
           { error: "No credits remaining. Purchase more credits to continue." },
           402,
@@ -226,11 +269,25 @@ route.post("/", userAuth, async (c) => {
       // the second hits idx_podcasts_unique_expansion. Refund the credit,
       // look up the winner, and return 409 like the pre-INSERT idempotency check.
       if (insertError.code === "23505" && isExpansion) {
-        // Refund: increment credits_remaining (best-effort — if this fails
-        // we still need to surface the 409 cleanly).
+        // Refund to the same bucket we just deducted from. Best-effort: if
+        // this fails we still surface the 409 cleanly. The bucket sticker
+        // (deductedBucket) is the only state that survives across the failed
+        // INSERT path; re-reading from subscription would race the concurrent
+        // winner that's also writing to credits_remaining.
+        const refundColumn =
+          deductedBucket === "bonus" ? "bonus_credits" : "credits_remaining";
+        const { data: latestSub } = await serviceClient
+          .from("subscriptions")
+          .select("credits_remaining, bonus_credits")
+          .eq("user_id", user.id)
+          .single();
+        const currentValue =
+          (refundColumn === "bonus_credits"
+            ? latestSub?.bonus_credits
+            : latestSub?.credits_remaining) ?? 0;
         await serviceClient
           .from("subscriptions")
-          .update({ credits_remaining: updatedSub.credits_remaining + 1 })
+          .update({ [refundColumn]: currentValue + 1 })
           .eq("user_id", user.id);
         const { data: winner } = await serviceClient
           .from("podcasts")

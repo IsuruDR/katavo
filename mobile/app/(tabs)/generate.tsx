@@ -5,12 +5,15 @@
  * Phase 1 — input: editorial title prompt and a bottom-hairline topic field.
  * Phase 2 — clarifying: all questions visible at once via ClarifyingForm.
  *
- * Loading and submitting both render the typographic LoadingOverlay; no
- * spinners. Errors show inline at the top of the input phase rather than as
+ * Loading states stay inline — the topic input + Generate CTA dim during
+ * the question-generation request; ClarifyingForm's own CTA dims during
+ * the submit round-trip. No full-screen LoadingOverlay takeovers.
+ * Errors show inline at the top of the input phase rather than as
  * disruptive alerts.
  */
 import { useState } from "react";
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -26,29 +29,47 @@ import { useSubscription } from "../../src/hooks/useSubscription";
 import { useProfile } from "../../src/hooks/useProfile";
 import { CreditChip } from "../../src/components/CreditChip";
 import { ClarifyingForm } from "../../src/components/ClarifyingForm";
-import { LoadingOverlay } from "../../src/components/LoadingOverlay";
 import { ResearchingSheet } from "../../src/components/ResearchingSheet";
 import {
   generateQuestions,
   submitPodcast,
 } from "../../src/services/podcast";
 import { emitPending } from "../../src/state/pendingPodcasts";
-import { color, font, space, text } from "../../src/theme/tokens";
+import { color, font, layout, space, text } from "../../src/theme/tokens";
 
 type Phase = "input" | "loading-questions" | "clarifying" | "submitting";
 
 export default function Generate() {
   const router = useRouter();
   const { subscription, refresh: refreshSub } = useSubscription();
-  const { setOnboardingComplete } = useProfile();
+  const { profile, setOnboardingComplete } = useProfile();
   const [topic, setTopic] = useState("");
   const [questions, setQuestions] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>("input");
   const [error, setError] = useState<string | null>(null);
   const [showResearching, setShowResearching] = useState(false);
 
-  const credits = subscription?.creditsRemaining ?? 0;
+  // Combined balance: monthly (resets on RevenueCat events) + bonus (non-
+  // expiring signup credit, migration 00025). All gates check the total;
+  // CreditChip renders them separately for transparency.
+  const monthlyCredits = subscription?.creditsRemaining ?? 0;
+  const bonusCredits = subscription?.bonusCredits ?? 0;
+  const credits = monthlyCredits + bonusCredits;
   const hasCredits = credits >= 1;
+  // Back link is hidden during focused onboarding (intentional one-way
+  // flow until the user submits their first podcast). After that, the
+  // link is visible in the header so the user can escape the screen
+  // when the keyboard hides the tab bar.
+  const showBack = profile?.onboardingComplete === true;
+
+  const handleBack = () => {
+    Keyboard.dismiss();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
 
   const handleStartGeneration = async () => {
     if (!topic.trim()) return;
@@ -128,27 +149,25 @@ export default function Generate() {
     setPhase("input");
   };
 
-  if (phase === "loading-questions") {
-    return <LoadingOverlay message="Reading your topic" />;
-  }
-  if (phase === "submitting") {
-    return <LoadingOverlay message="Sending your topic to research" />;
-  }
-
-  if (phase === "clarifying") {
+  if (phase === "clarifying" || phase === "submitting") {
     return (
       <ClarifyingForm
         questions={questions}
         creditsRemaining={credits}
+        bonusCredits={bonusCredits}
         onSubmit={handleClarifyingSubmit}
         onBack={handleClarifyingBack}
+        submitting={phase === "submitting"}
       />
     );
   }
 
-  // Phase: input
+  // Phases: input + loading-questions. Same UI; loading-questions disables
+  // the topic input + CTA in place while the request is in flight. No
+  // full-screen takeover.
+  const isReadingTopic = phase === "loading-questions";
   const submitLabel = hasCredits ? "Generate" : "Out of credits. Buy more.";
-  const canTap = hasCredits ? topic.trim().length > 0 : true;
+  const canTap = !isReadingTopic && (hasCredits ? topic.trim().length > 0 : true);
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
@@ -156,9 +175,25 @@ export default function Generate() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
+        <Pressable
+          style={styles.flex}
+          onPress={Keyboard.dismiss}
+          accessible={false}
+        >
         <View style={styles.header}>
-          <View />
-          <CreditChip count={credits} />
+          {showBack ? (
+            <Pressable
+              onPress={handleBack}
+              hitSlop={layout.hitSlop}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+            >
+              <Text style={styles.back}>Back</Text>
+            </Pressable>
+          ) : (
+            <View />
+          )}
+          <CreditChip count={credits} bonus={bonusCredits} />
         </View>
 
         <View style={styles.body}>
@@ -179,6 +214,7 @@ export default function Generate() {
             placeholderTextColor={color.inkTertiary}
             multiline
             autoCorrect
+            editable={!isReadingTopic}
             accessibilityLabel="Topic to research"
           />
         </View>
@@ -204,6 +240,7 @@ export default function Generate() {
             <Text style={styles.submitLabel}>{submitLabel}</Text>
           </Pressable>
         </View>
+        </Pressable>
       </KeyboardAvoidingView>
 
       <ResearchingSheet
@@ -224,6 +261,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.xl,
     paddingTop: space.sm,
     paddingBottom: space.sm,
+  },
+  back: {
+    ...text.body,
+    color: color.inkSecondary,
   },
   body: {
     flex: 1,

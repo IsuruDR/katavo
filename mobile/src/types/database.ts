@@ -288,6 +288,7 @@ export type Database = {
       subscriptions: {
         Row: {
           billing_period: Database["public"]["Enums"]["billing_period"] | null
+          bonus_credits: number
           created_at: string
           credits_per_month: number
           credits_remaining: number
@@ -303,6 +304,7 @@ export type Database = {
         }
         Insert: {
           billing_period?: Database["public"]["Enums"]["billing_period"] | null
+          bonus_credits?: number
           created_at?: string
           credits_per_month?: number
           credits_remaining?: number
@@ -318,6 +320,7 @@ export type Database = {
         }
         Update: {
           billing_period?: Database["public"]["Enums"]["billing_period"] | null
+          bonus_credits?: number
           created_at?: string
           credits_per_month?: number
           credits_remaining?: number

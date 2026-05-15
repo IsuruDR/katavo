@@ -86,16 +86,29 @@ function Reveal({
 
 interface Props {
   questions: string[];
+  /** Combined balance (monthly + bonus). Drives the cost-line + CTA. */
   creditsRemaining: number;
+  /** Bonus portion of the balance; passed through to CreditChip for the
+   * split-display variant. Defaults to 0 (legacy single-number display). */
+  bonusCredits?: number;
   onSubmit: (answers: Array<{ q: string; a: string }>) => void;
   onBack: () => void;
+  /**
+   * True while the parent is mid-submit (request in flight). Disables
+   * the Generate CTA and the Back button in place so the user can't
+   * double-tap or navigate away during the submit round-trip — replaces
+   * the previous full-screen LoadingOverlay takeover.
+   */
+  submitting?: boolean;
 }
 
 export function ClarifyingForm({
   questions,
   creditsRemaining,
+  bonusCredits = 0,
   onSubmit,
   onBack,
+  submitting = false,
 }: Props) {
   const safeQuestions = Array.isArray(questions) ? questions : [];
   const [answers, setAnswers] = useState<string[]>(() =>
@@ -140,13 +153,19 @@ export function ClarifyingForm({
         <View style={styles.header}>
           <Pressable
             onPress={onBack}
+            disabled={submitting}
             hitSlop={layout.hitSlop}
             accessibilityRole="button"
             accessibilityLabel="Back to topic"
+            accessibilityState={{ disabled: submitting }}
+            style={({ pressed }) => [
+              submitting && styles.backLabelDisabled,
+              pressed && !submitting && styles.backLabelPressed,
+            ]}
           >
             <Text style={styles.backLabel}>Back</Text>
           </Pressable>
-          <CreditChip count={creditsRemaining} />
+          <CreditChip count={creditsRemaining} bonus={bonusCredits} />
         </View>
 
         <ScrollView
@@ -195,15 +214,15 @@ export function ClarifyingForm({
           </Text>
           <Pressable
             onPress={handleSubmit}
-            disabled={!canSubmit}
+            disabled={!canSubmit || submitting}
             style={({ pressed }) => [
               styles.submit,
-              !canSubmit && styles.submitDisabled,
-              pressed && canSubmit && styles.submitPressed,
+              (!canSubmit || submitting) && styles.submitDisabled,
+              pressed && canSubmit && !submitting && styles.submitPressed,
             ]}
             accessibilityRole="button"
             accessibilityLabel="Generate podcast"
-            accessibilityState={{ disabled: !canSubmit }}
+            accessibilityState={{ disabled: !canSubmit || submitting }}
           >
             <Text style={styles.submitLabel}>Generate podcast</Text>
           </Pressable>
@@ -232,6 +251,12 @@ const styles = StyleSheet.create({
   backLabel: {
     ...text.body,
     color: color.inkSecondary,
+  },
+  backLabelDisabled: {
+    opacity: 0.4,
+  },
+  backLabelPressed: {
+    opacity: 0.6,
   },
   scrollContent: {
     paddingHorizontal: space.xl,

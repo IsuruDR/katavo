@@ -75,7 +75,12 @@ export default function Account() {
     }, [refresh]),
   );
 
-  const serverCredits = subscription?.creditsRemaining ?? 0;
+  // Combined balance: monthly bucket (creditsRemaining, reset by RevenueCat
+  // events) + bonus bucket (non-expiring signup credit, migration 00025).
+  // Plan subtitle shows the combined total; account view doesn't surface
+  // the buckets separately because there's no action that targets one.
+  const serverCredits =
+    (subscription?.creditsRemaining ?? 0) + (subscription?.bonusCredits ?? 0);
 
   // Drop the optimistic bump as soon as the server-side credit count has
   // moved by at least the bumped amount. Conservative match — avoids

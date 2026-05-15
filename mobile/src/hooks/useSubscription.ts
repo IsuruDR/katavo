@@ -7,6 +7,7 @@ interface SubscriptionRow {
   tier: "free" | "plus" | "pro";
   credits_remaining: number;
   credits_per_month: number;
+  bonus_credits: number;
   deep_dive_minutes_remaining: number;
   deep_dive_minutes_per_month: number;
   status: string;
@@ -18,6 +19,13 @@ export interface Subscription {
   tier: "free" | "plus" | "pro";
   creditsRemaining: number;
   creditsPerMonth: number;
+  /**
+   * Non-expiring welcome credits (migration 00025). Never touched by
+   * RevenueCat lifecycle webhooks. Deducted only after credits_remaining
+   * runs out. Combine with creditsRemaining for any "can the user generate?"
+   * gate; render separately in chip-level UI to keep the gift visible.
+   */
+  bonusCredits: number;
   deepDiveMinutesRemaining: number;
   deepDiveMinutesPerMonth: number;
   status: string;
@@ -29,6 +37,7 @@ function toSubscription(row: SubscriptionRow): Subscription {
     tier: row.tier,
     creditsRemaining: row.credits_remaining,
     creditsPerMonth: row.credits_per_month,
+    bonusCredits: row.bonus_credits ?? 0,
     deepDiveMinutesRemaining: row.deep_dive_minutes_remaining,
     deepDiveMinutesPerMonth: row.deep_dive_minutes_per_month,
     status: row.status,
@@ -46,7 +55,7 @@ export function useSubscription() {
     const { data } = await supabase
       .from("subscriptions")
       .select(
-        "tier, credits_remaining, credits_per_month, deep_dive_minutes_remaining, deep_dive_minutes_per_month, status, renewal_date",
+        "tier, credits_remaining, credits_per_month, bonus_credits, deep_dive_minutes_remaining, deep_dive_minutes_per_month, status, renewal_date",
       )
       .eq("user_id", user.id)
       .single();

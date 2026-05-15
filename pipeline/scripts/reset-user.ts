@@ -89,6 +89,7 @@ async function resetUser(userId: string, tier: Tier): Promise<void> {
       billing_period: "monthly",
       credits_per_month: 2,
       credits_remaining: 2,
+      bonus_credits: 1,
       deep_dive_minutes_per_month: 0,
       deep_dive_minutes_remaining: 0,
       renewal_date: null,
@@ -96,7 +97,7 @@ async function resetUser(userId: string, tier: Tier): Promise<void> {
     })
     .eq("user_id", userId);
   if (subErr) throw new Error(`Subscription reset failed: ${subErr.message}`);
-  console.log("  ✓ subscription reset to free (2/2 credits, 0/0 deep dive)");
+  console.log("  ✓ subscription reset to free (2/2 monthly + 1 bonus credit, 0/0 deep dive)");
 
   if (tier === "pro") {
     console.log("\nApplying Pro upgrade via make-pro-user.ts...");
