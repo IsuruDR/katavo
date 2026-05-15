@@ -217,10 +217,14 @@ export function usePodcasts() {
           return next;
         });
       }
-      await supabase
-        .from("podcasts")
-        .update({ deleted_at: null })
-        .eq("id", id);
+      // The podcasts UPDATE policy is locked to soft-delete only (migration
+      // 00007 WITH CHECK: deleted_at IS NOT NULL), so a direct
+      // .update({ deleted_at: null }) silently filters to zero rows.
+      // restore_podcast is a SECURITY DEFINER RPC (migration 00024) that
+      // owns the bypass after asserting auth.uid() = user_id internally.
+      // The cascade trigger fires on the parent UPDATE and restores
+      // descendants belonging to the same owner.
+      await supabase.rpc("restore_podcast", { p_id: id });
     },
     [pendingDeletes],
   );

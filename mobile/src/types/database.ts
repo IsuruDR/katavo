@@ -352,6 +352,13 @@ export type Database = {
           is_root: boolean
         }[]
       }
+      restore_podcast: {
+        Args: { p_id: string }
+        Returns: {
+          id: string
+          deleted_at: string | null
+        }[]
+      }
     }
     Enums: {
       billing_period: "monthly" | "annual"
