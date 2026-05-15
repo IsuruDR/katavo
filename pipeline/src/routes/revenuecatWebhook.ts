@@ -28,12 +28,34 @@ const route = new Hono();
 route.post("/", webhookAuth, async (c) => {
   try {
     const event = await c.req.json();
+    const eventId: string | undefined = event?.event?.id;
     const { type, app_user_id, product_id, expiration_at_ms } = event.event;
 
     const serviceClient = createClient(
       process.env.SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
+
+    // SEC-1: replay protection. RevenueCat retries on transient failures, and
+    // a leaked webhook secret would let an attacker replay any captured payload
+    // to grant credits or upgrade a subscription. webhook_events has event_id
+    // as PK; the INSERT fails with 23505 on a duplicate and we short-circuit.
+    if (eventId) {
+      const { error: dedupeErr } = await serviceClient
+        .from("webhook_events")
+        .insert({ event_id: eventId, source: "revenuecat" });
+      if (dedupeErr) {
+        if (dedupeErr.code === "23505") {
+          console.log(`webhook replay: ignoring duplicate event ${eventId}`);
+          return c.json({ received: true, duplicate: true });
+        }
+        console.error("webhook dedupe insert failed:", dedupeErr);
+        return c.json({ error: "Webhook dedupe failed" }, 500);
+      }
+    } else {
+      console.warn("webhook missing event.id; cannot dedupe");
+    }
+
     const userId = app_user_id;
 
     switch (type) {

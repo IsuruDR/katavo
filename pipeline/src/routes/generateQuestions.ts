@@ -12,12 +12,23 @@
  */
 
 import { Hono } from "hono";
+import { createClient } from "@supabase/supabase-js";
 import { userAuth } from "../middleware/auth.js";
 
 const MODERATION_BLOCKLIST = [
   "how to make a bomb",
   "how to harm",
 ];
+
+// SEC-2: bounded daily counter on /api/generate-questions. The endpoint is
+// authed but unmetered against credits, so a free-tier abuser can loop it
+// and burn OpenAI spend. 50/day is generous enough to never block a real
+// user (most podcasts take 1-2 question rounds) and tight enough to bound
+// runaway cost from a single account.
+const DAILY_QUESTION_LIMIT = 50;
+// Bounds the prompt body sent to OpenAI. ~500 chars is enough for a
+// thoughtful research topic; longer is almost always abuse or noise.
+const MAX_TOPIC_LENGTH = 500;
 
 // Rate-limit retry budget. Mirrors deepResearch's policy: 2 retries,
 // honor Retry-After when present, cap per-retry wait at 30s.
@@ -61,12 +72,63 @@ export async function fetchWithRateLimitRetry(
 
 const route = new Hono();
 
+/**
+ * Per-user daily rate-limit check against profiles.generate_questions_count.
+ * Returns true if the call is allowed and increments the counter; returns
+ * false if the limit is hit. Day rolls over at midnight server-time.
+ */
+export async function checkAndIncrementQuota(userId: string): Promise<{
+  allowed: boolean;
+  remaining: number;
+}> {
+  const supabase = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("generate_questions_count, generate_questions_day")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error || !profile) {
+    console.warn("rate-limit: profile lookup failed; failing open", { userId, error });
+    return { allowed: true, remaining: DAILY_QUESTION_LIMIT };
+  }
+
+  const dayMatches = profile.generate_questions_day === today;
+  const currentCount = dayMatches ? profile.generate_questions_count : 0;
+
+  if (currentCount >= DAILY_QUESTION_LIMIT) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  await supabase
+    .from("profiles")
+    .update({
+      generate_questions_count: currentCount + 1,
+      generate_questions_day: today,
+    })
+    .eq("id", userId);
+
+  return { allowed: true, remaining: DAILY_QUESTION_LIMIT - (currentCount + 1) };
+}
+
 route.post("/", userAuth, async (c) => {
   try {
+    const user = c.get("user");
     const { topic } = await c.req.json();
 
     if (!topic || typeof topic !== "string" || topic.trim().length === 0) {
       return c.json({ error: "Topic is required" }, 400);
+    }
+    if (topic.length > MAX_TOPIC_LENGTH) {
+      return c.json(
+        { error: `Topic must be ${MAX_TOPIC_LENGTH} characters or fewer.` },
+        400,
+      );
     }
 
     const lowerTopic = topic.toLowerCase();
@@ -77,6 +139,16 @@ route.post("/", userAuth, async (c) => {
           400,
         );
       }
+    }
+
+    const quota = await checkAndIncrementQuota(user.id);
+    if (!quota.allowed) {
+      return c.json(
+        {
+          error: `Daily limit reached. You can generate up to ${DAILY_QUESTION_LIMIT} question sets per day. Try again tomorrow.`,
+        },
+        429,
+      );
     }
 
     const response = await fetchWithRateLimitRetry(

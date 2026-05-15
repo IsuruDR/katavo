@@ -35,6 +35,12 @@ export function setJobManager(jm: JobManager): void {
   jobManager = jm;
 }
 
+// SEC-2: bound the size of user input that flows into LLM prompts. Real
+// topics are short; long inputs are abuse or accidental paste-of-an-essay.
+// Per-answer cap is generous (most clarifying answers are a sentence or two).
+const MAX_TOPIC_LENGTH = 500;
+const MAX_ANSWER_LENGTH = 1000;
+
 route.post("/", userAuth, async (c) => {
   try {
     const user = c.get("user");
@@ -47,6 +53,30 @@ route.post("/", userAuth, async (c) => {
 
     if (isExpansion && !sourceChapterTitle) {
       return c.json({ error: "sourceChapterTitle required when parentPodcastId set" }, 400);
+    }
+
+    // Length caps on user input. Topic is required for non-expansion runs;
+    // expansions reuse the parent's topic so the field can be empty.
+    if (!isExpansion) {
+      if (typeof topic !== "string" || topic.trim().length === 0) {
+        return c.json({ error: "Topic is required" }, 400);
+      }
+      if (topic.length > MAX_TOPIC_LENGTH) {
+        return c.json(
+          { error: `Topic must be ${MAX_TOPIC_LENGTH} characters or fewer.` },
+          400,
+        );
+      }
+    }
+    if (Array.isArray(clarifyingAnswers)) {
+      for (const entry of clarifyingAnswers) {
+        if (typeof entry?.a === "string" && entry.a.length > MAX_ANSWER_LENGTH) {
+          return c.json(
+            { error: `Clarifying answers must be ${MAX_ANSWER_LENGTH} characters or fewer.` },
+            400,
+          );
+        }
+      }
     }
 
     const serviceClient = createClient(
