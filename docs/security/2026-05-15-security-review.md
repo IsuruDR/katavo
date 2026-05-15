@@ -23,8 +23,8 @@ There is no public-facing admin surface and no WebView in the mobile app, which 
 
 | ID | Severity | Title | Status |
 |---|---|---|---|
-| SEC-1 | High | RevenueCat webhook has no replay/idempotency protection | Open |
-| SEC-2 | High | `generate-questions` is an unmetered LLM call | Open |
+| SEC-1 | High | RevenueCat webhook has no replay/idempotency protection | Fixed (da3c9d6) |
+| SEC-2 | High | `generate-questions` is an unmetered LLM call | Fixed (da3c9d6) |
 | SEC-3 | High | Indirect prompt injection via Tavily search results | Fixed (35f8c8a) |
 | SEC-4 | High | 1-year signed audio URLs survive deletion | Open |
 | SEC-5 | Medium | Profile RLS UPDATE missing `WITH CHECK` | Open |
