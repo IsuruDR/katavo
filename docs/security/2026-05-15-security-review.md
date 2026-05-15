@@ -27,14 +27,14 @@ There is no public-facing admin surface and no WebView in the mobile app, which 
 | SEC-2 | High | `generate-questions` is an unmetered LLM call | Fixed (da3c9d6) |
 | SEC-3 | High | Indirect prompt injection via Tavily search results | Fixed (35f8c8a) |
 | SEC-4 | High | 1-year signed audio URLs survive deletion | Open |
-| SEC-5 | Medium | Profile RLS UPDATE missing `WITH CHECK` | Open |
+| SEC-5 | Medium | Profile RLS UPDATE missing `WITH CHECK` | Fixed (ac9c7cb) |
 | SEC-6 | Medium | `Linking.openURL` accepts any scheme | Fixed (4c06b6c) |
-| SEC-7 | Medium | Cascade soft-delete trigger lacks SECURITY DEFINER + search_path | Open |
-| SEC-8 | Medium | `handle_podcast_failure` trigger missing search_path | Open |
+| SEC-7 | Medium | Cascade soft-delete trigger lacks SECURITY DEFINER + search_path | Fixed (ac9c7cb) |
+| SEC-8 | Medium | `handle_podcast_failure` trigger missing search_path | Fixed (ac9c7cb, source-only; live was already patched) |
 | SEC-9 | Medium | Script writer can emit attacker URLs/phone in audio | Fixed (98b139f) |
-| SEC-10 | Low | Push notification deep-link router has no allowlist | Open |
-| SEC-11 | Info | `usePlaybackEvents` inserts fail silently | Open |
-| SEC-12 | Info | RevenueCat `app_user_id` trusted without lookup | Open |
+| SEC-10 | Low | Push notification deep-link router has no allowlist | Fixed (b7e57b2) |
+| SEC-11 | Info | `usePlaybackEvents` inserts fail silently | Fixed (b7e57b2) |
+| SEC-12 | Info | RevenueCat `app_user_id` trusted without lookup | Fixed (b7e57b2) |
 
 ---
 
