@@ -33,15 +33,24 @@ export interface SubagentBudget {
   maxReflections: number;
 }
 
+/** Shared, optional collector for URLs the Tavily tool returns during a run. */
+export interface SubagentOpts extends SubagentBudget {
+  seenUrlSink?: Set<string>;
+}
+
 const timeoutAfter = (ms: number, label: string): Promise<never> =>
   new Promise((_, reject) => setTimeout(() => reject(new Error(label)), ms));
 
 async function invokeOnce(
   task: SubagentTask,
-  opts: SubagentBudget,
+  opts: SubagentOpts,
   config?: RunnableConfig,
 ): Promise<SubagentFindings> {
-  const tool = makeTavilyTool({ taskId: task.id, maxSearches: opts.maxSearches });
+  const tool = makeTavilyTool({
+    taskId: task.id,
+    maxSearches: opts.maxSearches,
+    seenUrlSink: opts.seenUrlSink,
+  });
   const llm = makeOpenRouterModel(RESEARCH_MODELS.subagent, {
     temperature: RESEARCH_TEMPERATURES.subagent,
     maxTokens: RESEARCH_MAX_TOKENS.subagent,
@@ -78,7 +87,7 @@ async function invokeOnce(
 
 export async function runSubagent(
   task: SubagentTask,
-  opts: SubagentBudget,
+  opts: SubagentOpts,
   config?: RunnableConfig,
 ): Promise<SubagentFindings> {
   for (let attempt = 1; attempt <= 2; attempt++) {

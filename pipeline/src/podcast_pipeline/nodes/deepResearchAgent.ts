@@ -2,6 +2,7 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { runPlanner } from "./research/planner.js";
 import { runSubagent, type SubagentFindings } from "./research/subagent.js";
 import { runSynthesizer, type ResearchDocument } from "./research/synthesizer.js";
+import { sanitizeResearchDocument } from "./research/sanitize.js";
 import { RESEARCH_BUDGETS, RESEARCH_MODELS } from "../config.js";
 import type { PipelineStateType } from "../state.js";
 
@@ -52,7 +53,12 @@ export async function deepResearchAgent(
     };
   }
 
-  const results = await Promise.all(tasks.map((t) => runSubagent(t, budget, config)));
+  // Shared sink: every URL Tavily returns to any subagent lands here, so we
+  // can filter the synthesizer's `sources` array down to URLs that actually
+  // came back from a search (and weren't fabricated mid-prompt-injection).
+  const seenUrls = new Set<string>();
+  const subagentOpts = { ...budget, seenUrlSink: seenUrls };
+  const results = await Promise.all(tasks.map((t) => runSubagent(t, subagentOpts, config)));
   const usable = results.filter((r) => r.status !== "failed");
   const dropped = results.filter((r) => r.status === "failed").map((r) => r.question);
 
@@ -97,6 +103,16 @@ export async function deepResearchAgent(
       rawResearchResponse,
     };
   }
+
+  const sanitized = sanitizeResearchDocument(researchDocument, seenUrls);
+  if (sanitized.droppedCount > 0) {
+    console.warn("[deepResearchAgent.sanitize] dropped sources:", {
+      droppedCount: sanitized.droppedCount,
+      reasons: sanitized.droppedReasons,
+      totalSources: researchDocument.sources.length,
+    });
+  }
+  researchDocument = sanitized.document;
 
   const { score, report } = computeCredibility(researchDocument);
 
