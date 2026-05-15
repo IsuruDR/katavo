@@ -71,12 +71,15 @@ sequenceDiagram
   S-->>W: Session (JWT)
   W->>API: POST /api/share/clone-and-expand
   API->>DB: clone_shared_tree RPC
-  DB-->>API: cloned_parent_id, descendant_ids
-  API->>ST: Copy audio/cover/transcript blobs
-  API->>DB: INSERT new expansion row (status=queued)
-  API->>P: Enqueue expansion job
-  API->>DB: INSERT session_claim_tokens row
-  API-->>W: { cloned_parent_id, expansion_id, claim_token }
+  DB-->>API: cloned_parent_id, descendant_ids, descendant_source_chapters
+  API->>ST: Copy audio/cover/transcript blobs (existence-check first)
+  Note over API,DB: BEGIN txn
+  API->>DB: UPDATE subscriptions SET credits = credits - 1 WHERE credits > 0
+  API->>DB: INSERT expansion row (status=queued, parent + voice)
+  Note over API,DB: COMMIT
+  API->>P: Enqueue expansion job (post-commit)
+  API->>DB: INSERT session_claim_tokens row (only if fresh signup)
+  API-->>W: { cloned_parent_id, expansion_id, claim_token? }
   W-->>U: State B: cooking bar + spinner on chapter N
   Note over W,U: Audio keeps playing
   P->>DB: status=complete (eventually)
@@ -184,19 +187,23 @@ Request body:
 ```
 
 Sequence:
-1. Validate share_token is live and chapter_index is in range.
+1. Validate share_token is live and chapter_index is in range. Capture `request_started_at = now()` here — used by step 7's fresh-signup gate so a slow request doesn't disqualify a genuinely-fresh user.
 2. Call `clone_shared_tree(share_token, user_id)` → returns `cloned_parent_id`, `cloned_descendant_ids[]`, and `descendant_source_chapters` (the source_chapter_title of each cloned descendant — used in step 4 below). Idempotent — instant on retry, ~2-3s on first clone due to the DB row inserts.
-3. Run the storage copy step (app code, detailed in the Storage strategy section below).
-4. Check that the chapter at `chapter_index` doesn't already have an expansion in the cloned tree. Lookup: get the chapter title at `chapter_index` from the cloned parent's `chapter_markers`, then look for it in `descendant_source_chapters`. If found, return that existing expansion's id and skip the rest (steps 5–8 below) — no credit deducted.
-5. INSERT the new expansion podcast row in a *single transaction* that also runs the credit-deduction CAS. The transaction order: deduct credit first (with `WHERE credits > 0` predicate), then INSERT the expansion row. If the INSERT hits a unique constraint (see "Same-chapter race" in Error Handling), the transaction aborts and the credit decrement is rolled back. If the credit deduction returns zero rows affected (insufficient credits), the transaction aborts and the endpoint returns 402.
-6. Push the job onto the in-memory job manager — same path as `submit-podcast`. If push fails (unlikely but possible — e.g., manager rejects), mark the just-inserted row as `status='failed'` so the existing refund trigger fires.
-7. Issue a session-claim token if the authenticated user's `auth.users.created_at` is within 5 minutes of `now()` — a server-derived signal that this is a fresh signup, not a returning user. (We do NOT trust a client-supplied flag.) If `created_at` is older, the user already has the app installed or has used it before; no claim token is needed and none is returned.
+3. Run the storage copy step (app code, detailed in the Storage strategy section below). Three storage operations per cloned podcast (audio + cover + transcript). For a tree with one parent + four descendants, that's 15 sequential operations — expect 5–10s on a fresh clone.
+4. Resolve the chapter title from `chapter_index`: read `cloned_parent.chapter_markers`, which is a JSONB array `[{ timestampSeconds: number, title: string }, ...]` (existing v15+ schema, 0-indexed). The title at `chapter_markers[chapter_index].title` is `source_chapter_title`. Check if it's already in `descendant_source_chapters`. If yes, return that existing expansion's id and skip the rest — no credit deducted. The same `source_chapter_title` value is used for the INSERT in step 5, which is what makes the `podcasts_one_expansion_per_chapter` unique index actually enforce same-chapter dedup.
+5. In a single DB transaction: `UPDATE subscriptions SET credits = credits - 1 WHERE user_id = $1 AND credits > 0 RETURNING credits`. If zero rows returned, abort the transaction and return 402. The Postgres row lock acquired by the UPDATE serializes concurrent decrements, so two parallel calls can't both pass when only one credit remains. (This is a different shape from the explicit version-column CAS in `submit-podcast` — it's a row-locked predicate decrement, simpler and sufficient for our concurrency model. We deliberately diverge from submit-podcast's CAS here because we have no version column on subscriptions specific to credits.) Then INSERT the new expansion podcast row: `status='queued'`, `parent_podcast_id=cloned_parent_id`, `source_chapter_title=<resolved title from step 4>`, `voice=<cloned parent's voice>`. If INSERT hits the `podcasts_one_expansion_per_chapter` unique constraint, the transaction rolls back (credit decrement undone) and the endpoint returns the existing expansion id.
+6. After the transaction commits, push the job onto the in-memory job manager — same path as `submit-podcast`. Crash between commit and push leaves an orphan `status='queued'` row; covered by a startup recovery sweep that re-enqueues queued rows on boot (existing v7 pattern). If push fails synchronously, mark the row `status='failed'` so the existing DB trigger refunds the credit.
+7. If `auth.users.created_at >= request_started_at - 5 minutes`, this is a fresh signup. Apply profile mutations via service_role:
+   - `profile.onboarding_completed_at = now()` (bypasses the v9 onboarding gate)
+   - `profile.voice = <cloned parent's voice>` (sets the user's default voice — see Voice default callout in the Database section)
+   Then issue a session-claim token. The 5-minute window is measured against request entry, not request end, so a slow clone-and-expand call doesn't disqualify a genuinely-fresh user. If `created_at` is older, the user is returning — no profile mutations, no claim token.
 8. Return:
 ```ts
 { cloned_parent_id: string, expansion_podcast_id: string, claim_token?: string }
 ```
+When `claim_token` is absent in the response, web omits the `?claim=` query param from the Universal Link CTA. The existing-user mobile cell of the truth table handles that case cleanly.
 
-To prevent same-chapter races (two concurrent clone-and-expand calls for the same chapter on the same cloned tree), the `podcasts` table gets a unique partial index on `(parent_podcast_id, source_chapter_title) WHERE parent_podcast_id IS NOT NULL AND deleted_at IS NULL` — covered in the Database section.
+The migration adds two unique partial indexes that together prevent both root-clone and same-chapter races — covered in the Database section.
 
 ### 3. Pipeline integration — zero changes
 
@@ -276,9 +283,7 @@ sequenceDiagram
 
 We never store Supabase refresh tokens server-side. Session minting happens through Supabase's standard magic-link flow, triggered admin-side at claim time.
 
-The claim handler also flips two profile columns via service_role (covered in the Database section):
-- `onboarding_completed_at = now()`
-- `voice = <cloned parent's voice>`
+Profile mutations (`onboarding_completed_at`, `voice`) are NOT done here — they happen earlier in `/api/share/clone-and-expand` step 7, gated on the same fresh-signup signal. This way both the new-user-on-web path (claim runs) and the cold-install-then-app-sign-in path (claim never runs) get the same treatment. The claim endpoint only mints the session.
 
 ### Expiry and revocation
 
@@ -312,7 +317,7 @@ https://katavoapp.com/expand/<share_token>/<chapter_index>?claim=<jwt>&p=<cloned
 | null | absent | Cold install with no claim. Route to sign-in screen, then continue clone-and-expand after sign-in. Save the share_token + chapter_index in app state across the auth navigation so we resume on the right entry. |
 | null | present | New-user path — primary case. Redeem claim via `/api/auth/claim-session` → `verifyOtp` → if `p` is present, navigate to `/player/<p>`; otherwise call clone-and-expand (idempotent) and navigate. |
 | present, matches `claim.sub` | present | Same user as the claim. Skip redemption (token is already theirs from another device or earlier visit). Navigate based on `p` or call clone-and-expand. |
-| present, does NOT match `claim.sub` | present | Session mismatch. Show a confirm sheet: "This link is for a different account. Sign in as them, or keep your current session?" If they confirm switching, sign out the current session, redeem, navigate. If they keep current, ignore claim, fall through to the "current_user_id present, claim absent" cell. |
+| present, does NOT match `claim.sub` | present | Session mismatch. Show a confirm sheet: "This link is for a different account. Sign in as them, or keep your current session?" If they confirm switching, sign out the current session, redeem, navigate. If redemption returns 410 (already used elsewhere) after sign-out, route to the sign-in screen with share_token + chapter_index preserved in app state so they can recover into either account by signing in normally. If they keep current, ignore claim, fall through to the "current_user_id present, claim absent" cell. |
 | present | absent | Existing user, deep link from share. Call clone-and-expand with the current JWT → navigate. |
 
 Errors at any point:
@@ -403,6 +408,21 @@ CREATE UNIQUE INDEX podcasts_clone_idempotency
 
 -- Same-chapter race guard: prevent two concurrent expansions of the
 -- same chapter on the same parent (cloned OR original).
+--
+-- IMPORTANT: this index applies to existing (non-cloned) parent podcasts
+-- too. Before applying the migration, run the pre-migration audit query
+-- to confirm no historical duplicates exist:
+--
+--   SELECT parent_podcast_id, source_chapter_title, COUNT(*)
+--   FROM public.podcasts
+--   WHERE parent_podcast_id IS NOT NULL
+--     AND source_chapter_title IS NOT NULL
+--     AND deleted_at IS NULL
+--   GROUP BY 1, 2 HAVING COUNT(*) > 1;
+--
+-- Expected: zero rows. If non-zero, resolve manually (soft-delete the
+-- duplicates) before applying. The existing v15+ code path doesn't
+-- create same-chapter dupes by construction, so this should be clean.
 CREATE UNIQUE INDEX podcasts_one_expansion_per_chapter
   ON public.podcasts (parent_podcast_id, source_chapter_title)
   WHERE parent_podcast_id IS NOT NULL
@@ -497,13 +517,13 @@ WHERE onboarding_completed_at IS NOT NULL
 
 Set on the client when the user resolves the push permission sheet (accept or dismiss) on first cooking view. Gate logic in the player: `IF push_prompted_at IS NULL AND user is on cooking view THEN show sheet`.
 
-### Profile mutations from claim-session
+### Profile mutations from clone-and-expand (fresh signups only)
 
-When `/api/auth/claim-session` runs, after verifying the token, it sets via service_role:
+When `/api/share/clone-and-expand` step 7 detects a fresh signup (`auth.users.created_at` within 5 minutes of request entry), it sets via service_role:
 - `profile.onboarding_completed_at = now()` — bypasses the v9 root-layout onboarding gate.
 - `profile.voice = <cloned parent's voice>` — see callout below.
 
-The profile row already exists at this point because the existing `on_auth_user_created` trigger created it during web sign-in.
+This runs in clone-and-expand (not claim-session) so both the new-user-on-web path and the cold-install-then-app-sign-in path get the same treatment. The profile row exists by the time clone-and-expand runs because the existing `on_auth_user_created` trigger created it at sign-in (whether on web or in-app).
 
 **Voice default callout.** Setting `profile.voice` to the cloned parent's voice means this user's *future* podcasts will also use that voice by default until they change it in Account. This is intentional: the user opted into this voice by tapping a share link from someone using it, and v9 requires a non-null voice on profile so the generate flow has a default. They can change it in the existing Account voice picker. If we wanted to scope the voice inheritance to the cloned tree only (not the profile default), we'd need to surface a voice picker the first time they hit "Generate a new podcast" in the app — which contradicts "skip the whole onboarding and voice selection part."
 
@@ -521,6 +541,8 @@ The copy step runs in app code (not the RPC) because Postgres can't call the Sto
 This makes retry safe: a partial copy from a prior failed attempt leaves files at the deterministic paths; the next call sees them and skips. The UPDATE of the URL columns is the commit point — if it never runs, the row points at User A's storage until a retry completes.
 
 **Convergent recovery.** If the storage step crashes after the RPC succeeded but before the URL columns are updated, the cloned row has audio_url pointing at User A's path. The mobile player can still resolve a signed URL against that path (it works as long as User A hasn't deleted their podcast). On any subsequent clone-and-expand call for the same user+share_token, idempotency returns the existing tree and we re-run the storage step. If User A deletes their podcast in the gap, the mobile player surfaces "Audio unavailable" on those rows — covered in error handling.
+
+**Assumption: copy is server-side atomic.** Supabase Storage's `copy` API runs server-side, so a partial object can't exist from this code path (the source either copies fully or not at all). If we ever switch to client-streamed copies, the existence-check optimization breaks — re-verify content hash or use timestamp-based invalidation.
 
 ## Error handling and edge cases
 
@@ -565,6 +587,8 @@ Grouped by origin, with the user-facing recovery for each.
 - Storage copy step: happy path, idempotent re-run, partial failure recovery.
 - `/api/auth/claim-session`: happy path, already-used, expired, invalid signature, integration with magic-link generation.
 - `wellKnown` route: AASA + assetlinks JSON shape.
+- Fresh-signup window: account created 1 minute ago → claim token issued + profile mutations applied. Account created 10 minutes ago → no claim token, no profile mutations. Account created 4 minutes ago but request takes 90s → claim token still issued (window measured from request entry).
+- End-to-end pipeline parity: run clone-and-expand against a real shared tree and confirm the resulting expansion emits identical Langfuse traces / stages as a normal user-submitted expansion (catches silent assumptions about parent ownership).
 
 **Mobile (typecheck + manual).**
 - `app/expand/[share_token]/[chapter_index].tsx` route resolves all four cells of the URL truth table.
