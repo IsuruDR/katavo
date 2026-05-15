@@ -53,6 +53,7 @@ route.get("/:token", async (c) => {
     }
     return {
       id: row.id,
+      parentPodcastId: row.parent_podcast_id ?? null,
       topic: row.topic,
       durationSeconds: row.duration_seconds,
       chapters: Array.isArray(row.chapter_markers) ? row.chapter_markers : [],

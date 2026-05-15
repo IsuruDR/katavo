@@ -10,6 +10,7 @@ const STORE_PLAY = "https://play.google.com/store/apps/details?id=co.katavo.app"
 
 export interface ShareEpisode {
   id: string;
+  parentPodcastId: string | null;
   topic: string;
   durationSeconds: number | null;
   chapters: { timestampSeconds: number; title: string }[];
@@ -18,7 +19,8 @@ export interface ShareEpisode {
   /**
    * For descendants, the parent chapter this expansion was spawned from.
    * Null on the root episode. Drives the genealogy display in the "More
-   * from this series" section.
+   * from this series" section and the client-side Listen-vs-Expand
+   * affordance after an episode swap.
    */
   sourceChapterTitle: string | null;
 }
@@ -61,8 +63,16 @@ function formatTimestamp(seconds: number): string {
 export function renderSharePage(input: ShareTemplateInput): string {
   const { root, descendants, shareUrl, defaultOgImage } = input;
   const ogImage = root.coverUrl ?? defaultOgImage;
+
+  // For every podcast in the tree, the JS-side renderChapters needs id,
+  // parentPodcastId, and sourceChapterTitle so it can derive the
+  // per-chapter Listen-vs-Expand affordance after an episode swap.
+  // The root's parent is null and source is null; descendants carry both.
   const episodesBlob = escapeScriptJson({
     [root.id]: {
+      id: root.id,
+      parentPodcastId: null,
+      sourceChapterTitle: null,
       topic: root.topic,
       chapters: root.chapters,
       audioUrl: root.audioUrl,
@@ -72,6 +82,9 @@ export function renderSharePage(input: ShareTemplateInput): string {
       descendants.map((d) => [
         d.id,
         {
+          id: d.id,
+          parentPodcastId: d.parentPodcastId,
+          sourceChapterTitle: d.sourceChapterTitle,
           topic: d.topic,
           chapters: d.chapters,
           audioUrl: d.audioUrl,
@@ -81,13 +94,27 @@ export function renderSharePage(input: ShareTemplateInput): string {
     ),
   });
 
+  // Map of chapter title -> expansion id, for the root podcast's chapters.
+  // Each chapter row uses this to decide: Listen (if expanded) or Expand
+  // in app (if not). Client-side renderChapters builds the same map per
+  // podcast when an episode swap happens.
+  const rootExpansionsByChapter = new Map<string, string>();
+  for (const d of descendants) {
+    if (d.sourceChapterTitle) {
+      rootExpansionsByChapter.set(d.sourceChapterTitle, d.id);
+    }
+  }
+
   const chapterItems = root.chapters
-    .map(
-      (ch) =>
-        `<li><button type="button" data-seek="${ch.timestampSeconds}" class="ch-seek"><span class="ts">${formatTimestamp(
-          ch.timestampSeconds,
-        )}</span><span class="ch-title">${htmlEscape(ch.title)}</span></button><a href="#get-app" class="ch-expand">Expand in app ›</a></li>`,
-    )
+    .map((ch) => {
+      const expansionId = rootExpansionsByChapter.get(ch.title);
+      const action = expansionId
+        ? `<button type="button" data-episode="${htmlEscape(expansionId)}" class="ch-listen">Listen ›</button>`
+        : `<button type="button" class="ch-expand" data-prompt-expand>Expand in app ›</button>`;
+      return `<li><button type="button" data-seek="${ch.timestampSeconds}" class="ch-seek"><span class="ts">${formatTimestamp(
+        ch.timestampSeconds,
+      )}</span><span class="ch-title">${htmlEscape(ch.title)}</span></button>${action}</li>`;
+    })
     .join("\n          ");
 
   const seriesSection = descendants.length
@@ -158,7 +185,7 @@ export function renderSharePage(input: ShareTemplateInput): string {
       section.chapters .ch-seek{appearance:none;background:none;border:0;color:var(--ink);text-align:left;flex:1;padding:0;font:inherit;cursor:pointer;display:flex;align-items:flex-start;gap:0;min-width:0}
       section.chapters .ts{display:inline-block;min-width:48px;color:var(--ink-2);font-variant-numeric:tabular-nums;flex-shrink:0}
       section.chapters .ch-title{flex:1;min-width:0}
-      section.chapters .ch-expand{font-size:12px;color:var(--accent);text-decoration:none;font-weight:600;letter-spacing:0.2px;white-space:nowrap;padding-top:1px}
+      section.chapters .ch-expand,section.chapters .ch-listen{appearance:none;background:none;border:0;font:inherit;color:var(--accent);font-size:12px;font-weight:600;letter-spacing:0.2px;white-space:nowrap;padding:0;cursor:pointer;align-self:flex-start;padding-top:1px}
       section.series{margin-top:56px;padding-top:32px;border-top:1px solid var(--hair)}
       section.series ul{list-style:none;padding:0;margin:0;display:grid;gap:0}
       section.series li{padding:20px 0;border-bottom:1px solid var(--hair)}
@@ -168,9 +195,19 @@ export function renderSharePage(input: ShareTemplateInput): string {
       section.series .series-listen{appearance:none;background:none;border:0;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;padding:0;font:inherit;letter-spacing:0.2px}
       footer{border-top:1px solid var(--hair);padding:32px 24px;text-align:center;color:var(--ink-2)}
       footer p{margin:0 0 16px;font-family:Georgia,"IBM Plex Serif",serif;font-size:16px;color:var(--ink)}
-      footer .badges{display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:wrap}
-      footer .badges a{display:inline-flex;align-items:center;height:48px}
-      footer img{height:40px;width:auto;display:block}
+      .badges{display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:wrap}
+      .badges a{display:flex;align-items:center;justify-content:center;width:160px;height:52px}
+      .badges img{max-width:100%;max-height:100%;width:auto;height:auto;display:block}
+      .modal{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;visibility:hidden;opacity:0;transition:opacity 200ms ease}
+      .modal[aria-hidden="false"]{visibility:visible;opacity:1}
+      .modal-scrim{position:absolute;inset:0;background:rgba(26,27,31,0.45);border:0;cursor:pointer;width:100%;padding:0}
+      .modal-sheet{position:relative;background:var(--paper);border-radius:24px 24px 0 0;padding:24px 24px 28px;max-width:480px;width:100%;text-align:center;transform:translateY(100%);transition:transform 220ms cubic-bezier(0.22,1,0.36,1)}
+      .modal[aria-hidden="false"] .modal-sheet{transform:translateY(0)}
+      .modal-grab{width:36px;height:4px;border-radius:2px;background:var(--hair);margin:0 auto 16px}
+      .modal-eyebrow{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 8px}
+      .modal-title{font-family:Georgia,"IBM Plex Serif",serif;font-size:26px;line-height:1.2;margin:0 0 8px;color:var(--ink);letter-spacing:-0.3px;font-weight:700}
+      .modal-body{color:var(--ink-2);margin:0 0 20px;font-size:15px;line-height:1.5}
+      .modal-close{appearance:none;background:none;border:0;color:var(--ink-2);font-size:14px;cursor:pointer;padding:12px;font:inherit;margin-top:8px}
     </style>
   </head>
   <body>
@@ -197,6 +234,22 @@ export function renderSharePage(input: ShareTemplateInput): string {
         <a href="${STORE_PLAY}"><img src="/og/play-store.png" alt="Get it on Google Play" /></a>
       </div>
     </footer>
+
+    <div id="expand-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button type="button" class="modal-scrim" data-close-modal aria-label="Close"></button>
+      <div class="modal-sheet">
+        <div class="modal-grab" aria-hidden="true"></div>
+        <p class="modal-eyebrow">Expand chapter</p>
+        <h3 class="modal-title" id="modal-title">Open it up in the app.</h3>
+        <p class="modal-body">Chapter expansions live in the Katavo app — pick the chapter, get a fresh ten-minute deep dive that builds on it.</p>
+        <div class="badges">
+          <a href="${STORE_APP}"><img src="/og/app-store.svg" alt="Download on the App Store" /></a>
+          <a href="${STORE_PLAY}"><img src="/og/play-store.png" alt="Get it on Google Play" /></a>
+        </div>
+        <button type="button" class="modal-close" data-close-modal>Maybe later</button>
+      </div>
+    </div>
+
     <script>
       window.__EPISODES__ = ${episodesBlob};
       (function () {
@@ -204,6 +257,7 @@ export function renderSharePage(input: ShareTemplateInput): string {
         var list = document.getElementById("chapter-list");
         var topicEl = document.getElementById("topic");
         var metaEl = document.getElementById("meta-row");
+        var modal = document.getElementById("expand-modal");
 
         function escapeHtml(s) {
           return s.replace(/[&<>"']/g, function (c) {
@@ -214,16 +268,57 @@ export function renderSharePage(input: ShareTemplateInput): string {
           var m = Math.floor(t / 60), s = Math.floor(t % 60);
           return m + ":" + (s < 10 ? "0" + s : s);
         }
-        function renderChapters(chapters) {
-          list.innerHTML = chapters
+        // For the given podcast id, build a map of chapter-title -> the
+        // descendant id that was expanded from that chapter. Mirrors the
+        // server-side rootExpansionsByChapter logic so per-chapter
+        // affordances stay consistent after an episode swap.
+        function expansionsFor(podcastId) {
+          var map = {};
+          var episodes = window.__EPISODES__;
+          for (var k in episodes) {
+            if (!Object.prototype.hasOwnProperty.call(episodes, k)) continue;
+            var e = episodes[k];
+            if (e.parentPodcastId === podcastId && e.sourceChapterTitle) {
+              map[e.sourceChapterTitle] = e.id;
+            }
+          }
+          return map;
+        }
+        function renderChapters(podcastId) {
+          var ep = window.__EPISODES__[podcastId];
+          if (!ep) return;
+          var expansions = expansionsFor(podcastId);
+          list.innerHTML = ep.chapters
             .map(function (ch) {
+              var expansionId = expansions[ch.title];
+              var action = expansionId
+                ? '<button type="button" data-episode="' + escapeHtml(expansionId) + '" class="ch-listen">Listen ›</button>'
+                : '<button type="button" class="ch-expand" data-prompt-expand>Expand in app ›</button>';
               return '<li><button type="button" data-seek="' + ch.timestampSeconds + '" class="ch-seek"><span class="ts">' +
                 fmt(ch.timestampSeconds) + '</span><span class="ch-title">' + escapeHtml(ch.title) +
-                '</span></button><a href="#get-app" class="ch-expand">Expand in app ›</a></li>';
+                '</span></button>' + action + '</li>';
             })
             .join("");
         }
+        function openExpandModal() {
+          if (!modal) return;
+          modal.setAttribute("aria-hidden", "false");
+          document.body.style.overflow = "hidden";
+        }
+        function closeExpandModal() {
+          if (!modal) return;
+          modal.setAttribute("aria-hidden", "true");
+          document.body.style.overflow = "";
+        }
         document.addEventListener("click", function (ev) {
+          if (ev.target.closest("[data-prompt-expand]")) {
+            openExpandModal();
+            return;
+          }
+          if (ev.target.closest("[data-close-modal]")) {
+            closeExpandModal();
+            return;
+          }
           var t = ev.target.closest("[data-seek]");
           if (t) {
             audio.currentTime = parseFloat(t.getAttribute("data-seek"));
@@ -238,12 +333,15 @@ export function renderSharePage(input: ShareTemplateInput): string {
             audio.pause();
             audio.src = data.audioUrl;
             audio.load();
-            renderChapters(data.chapters);
+            renderChapters(id);
             topicEl.textContent = data.topic;
             metaEl.textContent = data.durationLabel + " · " + data.chapters.length + " chapters";
             document.title = data.topic + " · Katavo";
             window.scrollTo(0, 0);
           }
+        });
+        document.addEventListener("keydown", function (ev) {
+          if (ev.key === "Escape") closeExpandModal();
         });
       })();
     </script>
