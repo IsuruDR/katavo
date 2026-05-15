@@ -7,6 +7,7 @@ import { getObservedOpenAI } from "../providers/langfuseClient.js";
 import { SCRIPT_WRITER_PROMPT, SCRIPT_WRITER_EXPANSION_PROMPT, TARGET_WORD_COUNT } from "../config.js";
 import { getVoicePersonality } from "../voicePersonality.js";
 import { persistStatus } from "./persistStatus.js";
+import { sanitizeScript } from "./scriptSanitizer.js";
 import type { PipelineStateType, ChapterResearchMap, ChapterResearchEntry } from "../state.js";
 
 /**
@@ -95,7 +96,24 @@ export async function scriptWriter(
   const rawOutput = response.choices[0].message.content ?? "";
 
   // Extract script (everything before the fenced chapter_research_map block)
-  const script = rawOutput.replace(/```chapter_research_map[\s\S]*?```/, "").trim();
+  const extractedScript = rawOutput.replace(/```chapter_research_map[\s\S]*?```/, "").trim();
+
+  // Defensive sanitizer: redact URLs, phone numbers, and emails before
+  // they reach TTS. Prompt-injected research can steer the writer into
+  // voicing an attacker-chosen URL or number out loud; once the MP3
+  // ships, detection is hard. See docs/security/2026-05-15-security-review.md
+  // SEC-9.
+  const { script, redactions } = sanitizeScript(extractedScript);
+  const totalRedactions =
+    redactions.urls.length + redactions.emails.length + redactions.phones.length;
+  if (totalRedactions > 0) {
+    console.warn("[scriptWriter.sanitize] redacted script content:", {
+      podcastId: state.podcastId,
+      urls: redactions.urls.length,
+      emails: redactions.emails.length,
+      phones: redactions.phones.length,
+    });
+  }
 
   // Content moderation -- output filtering
   const modResponse = await openai.moderations.create({ input: script });
