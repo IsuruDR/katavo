@@ -36,8 +36,15 @@ interface RetryError {
 const SEARCH_THRESHOLD = 8;
 
 export default function Library() {
-  const { podcasts, loading, refreshing, refresh, softDelete, restore } =
-    usePodcasts();
+  const {
+    podcasts,
+    loading,
+    refreshing,
+    refresh,
+    silentRefresh,
+    softDelete,
+    restore,
+  } = usePodcasts();
 
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -66,11 +73,13 @@ export default function Library() {
   // Library tab after submitting on Generate, refetch so the new row
   // appears within one round-trip even if realtime lagged. Optimistic
   // emit (Generate → pendingPodcasts → usePodcasts) is the primary path;
-  // this is belt-and-braces.
+  // this is belt-and-braces. Use silentRefresh so the FlatList's
+  // RefreshControl spinner doesn't fire on every tab focus — that
+  // visual is reserved for user-initiated pull-to-refresh.
   useFocusEffect(
     useCallback(() => {
-      refresh();
-    }, [refresh]),
+      silentRefresh();
+    }, [silentRefresh]),
   );
 
   const showSearch = podcasts.length >= SEARCH_THRESHOLD;
