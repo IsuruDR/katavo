@@ -14,6 +14,18 @@ interface Props {
   url: string;
 }
 
+/**
+ * Sources flow from the LLM-synthesized research_document. The server-side
+ * sanitizer drops fabricated URLs and non-http(s) schemes (see SEC-3), but
+ * we belt-and-brace on the client too. Only http(s) URLs are ever passed
+ * to Linking.openURL; anything else renders as an unclickable row labeled
+ * "Source unavailable" rather than risking a tel:/sms: pivot from an
+ * indirect-prompt-injection chain that bypassed the server filter.
+ */
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
 function hostFromUrl(url: string): string {
   try {
     return new URL(url).host.replace(/^www\./, "");
@@ -23,7 +35,10 @@ function hostFromUrl(url: string): string {
 }
 
 export function ResearchSourceRow({ n, title, url }: Props) {
+  const openable = isHttpUrl(url);
+
   const onPress = async () => {
+    if (!openable) return;
     try {
       const supported = await Linking.canOpenURL(url);
       if (supported) await Linking.openURL(url);
@@ -35,20 +50,27 @@ export function ResearchSourceRow({ n, title, url }: Props) {
   return (
     <Pressable
       onPress={onPress}
-      accessibilityRole="link"
-      accessibilityLabel={`Source ${n}: ${title}`}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      accessibilityRole={openable ? "link" : "text"}
+      accessibilityLabel={openable ? `Source ${n}: ${title}` : `Source ${n}: unavailable`}
+      disabled={!openable}
+      style={({ pressed }) => [
+        styles.row,
+        pressed && openable && styles.rowPressed,
+        !openable && styles.rowDisabled,
+      ]}
     >
       <Text style={styles.number}>{`[${n}]`}</Text>
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={2}>
-          {title}
+          {openable ? title : "Source unavailable"}
         </Text>
-        <Text style={styles.host} numberOfLines={1}>
-          {hostFromUrl(url)}
-        </Text>
+        {openable && (
+          <Text style={styles.host} numberOfLines={1}>
+            {hostFromUrl(url)}
+          </Text>
+        )}
       </View>
-      <Feather name="external-link" size={16} color={color.inkSecondary} />
+      {openable && <Feather name="external-link" size={16} color={color.inkSecondary} />}
     </Pressable>
   );
 }
@@ -61,6 +83,7 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   rowPressed: { opacity: 0.55 },
+  rowDisabled: { opacity: 0.5 },
   number: {
     fontFamily: font.sansSemiBold,
     fontSize: 14,
