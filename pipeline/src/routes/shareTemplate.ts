@@ -175,7 +175,7 @@ export function renderSharePage(input: ShareTemplateInput): string {
         <p>Want to go deeper? Expand any chapter in the app.</p>
         <div class="badges">
           <a href="${STORE_APP}"><img src="/og/app-store.svg" alt="Download on the App Store" /></a>
-          <a href="${STORE_PLAY}"><img src="/og/play-store.svg" alt="Get it on Google Play" /></a>
+          <a href="${STORE_PLAY}"><img src="/og/play-store.png" alt="Get it on Google Play" /></a>
         </div>
       </section>
       ${seriesSection}
@@ -184,7 +184,7 @@ export function renderSharePage(input: ShareTemplateInput): string {
       <p>Made with Katavo. Generate your own.</p>
       <div class="badges">
         <a href="${STORE_APP}"><img src="/og/app-store.svg" alt="Download on the App Store" /></a>
-        <a href="${STORE_PLAY}"><img src="/og/play-store.svg" alt="Get it on Google Play" /></a>
+        <a href="${STORE_PLAY}"><img src="/og/play-store.png" alt="Get it on Google Play" /></a>
       </div>
     </footer>
     <script>
