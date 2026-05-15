@@ -1,21 +1,28 @@
 /**
- * Shared player-screen NavRow: divider + pressable row with
- * eyebrow, title, optional subtitle, and chevron. Used by
- * ResearchNavRow and ShareNavRow.
+ * Shared player-screen NavRow: divider + pressable row with a 2px
+ * Library Green leading rule (the system's signature "margin note"
+ * ink-stamp), a serif title, an optional smoke subtitle, and a smoke
+ * chevron right. Used by ResearchNavRow and ShareNavRow as quiet
+ * reach-arounds beneath the chapter list.
+ *
+ * The leading rule extends the brand vocabulary already established
+ * by PodcastRow's in-flight indicator. Here it sits static — the row
+ * is always "active" (no in-flight state) so the rule is solid, not
+ * pulsing. The shared rule pattern makes the player surface read as
+ * one coherent editorial system rather than a mix of UI registers.
  */
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { color, font, space, text } from "../theme/tokens";
+import { color, space, text } from "../theme/tokens";
 
 interface Props {
-  eyebrow: string;
   title: string;
   subtitle?: string;
   onPress: () => void;
   accessibilityLabel: string;
 }
 
-export function NavRow({ eyebrow, title, subtitle, onPress, accessibilityLabel }: Props) {
+export function NavRow({ title, subtitle, onPress, accessibilityLabel }: Props) {
   return (
     <View>
       <View style={styles.divider} />
@@ -25,12 +32,14 @@ export function NavRow({ eyebrow, title, subtitle, onPress, accessibilityLabel }
         accessibilityLabel={accessibilityLabel}
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       >
+        <View style={styles.rule} />
         <View style={styles.body}>
-          <Text style={styles.eyebrow}>{eyebrow}</Text>
           <Text style={styles.title}>{title}</Text>
           {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
         </View>
-        <Feather name="chevron-right" size={20} color={color.inkSecondary} />
+        <View style={styles.chevronWrap}>
+          <Feather name="chevron-right" size={20} color={color.inkSecondary} />
+        </View>
       </Pressable>
     </View>
   );
@@ -40,19 +49,33 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: color.hairline },
   row: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "stretch",
     paddingVertical: space.lg,
     gap: space.md,
   },
   rowPressed: { opacity: 0.55 },
-  body: { flex: 1, gap: space.xxs },
-  eyebrow: {
-    fontFamily: font.sansSemiBold,
-    fontSize: 11,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    color: color.accent,
+  rule: {
+    width: 2,
+    alignSelf: "stretch",
+    borderRadius: 1,
+    backgroundColor: color.accent,
   },
-  title: { ...text.titleSerif, fontSize: 19, lineHeight: 26 },
-  subtitle: { ...text.body, fontSize: 13, color: color.inkSecondary, marginTop: 2 },
+  body: {
+    flex: 1,
+    justifyContent: "center",
+    gap: 2,
+  },
+  title: {
+    ...text.titleSerif,
+    fontSize: 17,
+    lineHeight: 24,
+  },
+  subtitle: {
+    ...text.body,
+    fontSize: 13,
+    color: color.inkSecondary,
+  },
+  chevronWrap: {
+    justifyContent: "center",
+  },
 });

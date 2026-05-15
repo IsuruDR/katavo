@@ -36,7 +36,6 @@ export function ResearchNavRow({ podcastId, podcastStatus }: Props) {
 
   return (
     <NavRow
-      eyebrow="Research"
       title="Sources behind this episode"
       onPress={onPress}
       accessibilityLabel={

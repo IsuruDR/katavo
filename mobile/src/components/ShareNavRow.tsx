@@ -67,7 +67,6 @@ export function ShareNavRow({
 
   return (
     <NavRow
-      eyebrow="Share"
       title={shareToken ? "Copy link" : "Share this episode"}
       subtitle={
         shareToken ? "Audio and chapters are public" : "Audio and chapters become public"
