@@ -186,10 +186,27 @@ export function usePodcasts() {
     fetchPodcasts();
   }, [fetchPodcasts]);
 
+  // Background refetch for programmatic triggers (focus refresh, etc.).
+  // Skips the `refreshing` flag so the FlatList's RefreshControl spinner
+  // doesn't fire — that visual is reserved for user-initiated pull-to-
+  // refresh, not for "I came back to this tab."
+  const silentRefresh = useCallback(() => {
+    fetchPodcasts();
+  }, [fetchPodcasts]);
+
   // Optimistic soft-delete: stash the row + drop it locally so it vanishes
   // immediately, then write deleted_at on the server. restore() reverses
   // the column write and re-inserts the stashed row at its original
   // position (sorted by created_at desc).
+  //
+  // The direct `.update({ deleted_at })` path silently fails server-side:
+  // supabase-js appends RETURNING which forces Postgres to re-check the
+  // SELECT policy (USING `deleted_at IS NULL`) against the post-update
+  // row, and the soft-deleted row is no longer visible to that policy.
+  // Postgres rejects with sqlstate 42501 "violates row-level security",
+  // the row never gets soft-deleted on the server, and the next refresh
+  // re-fetches it. soft_delete_podcast is a SECURITY DEFINER RPC
+  // (migration 00026) that owns the bypass after asserting ownership.
   const softDelete = useCallback(
     async (id: string) => {
       setPodcasts((prev) => {
@@ -197,10 +214,10 @@ export function usePodcasts() {
         if (target) pendingDeletes.set(id, target);
         return prev.filter((p) => p.id !== id);
       });
-      await supabase
-        .from("podcasts")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", id);
+      const { error } = await supabase.rpc("soft_delete_podcast", { p_id: id });
+      if (error) {
+        console.warn("soft_delete_podcast RPC failed:", error);
+      }
     },
     [pendingDeletes],
   );
@@ -247,6 +264,7 @@ export function usePodcasts() {
     loading,
     refreshing,
     refresh,
+    silentRefresh,
     softDelete,
     restore,
   };

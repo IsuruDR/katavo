@@ -362,6 +362,13 @@ export type Database = {
           deleted_at: string | null
         }[]
       }
+      soft_delete_podcast: {
+        Args: { p_id: string }
+        Returns: {
+          id: string
+          deleted_at: string | null
+        }[]
+      }
     }
     Enums: {
       billing_period: "monthly" | "annual"
