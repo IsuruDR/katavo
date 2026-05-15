@@ -14,15 +14,43 @@
 
 ---
 
+## Before starting — facts verified against the actual codebase
+
+Plan review surfaced several assumptions in the spec and early plan drafts that didn't match the codebase. The plan below already incorporates the corrections, but list them here so the implementer can sanity-check at execution time.
+
+| Assumed (incorrect) | Actual |
+|---|---|
+| `subscriptions.credits` column | `subscriptions.credits_remaining` (monthly bucket) AND `subscriptions.bonus_credits` (signup bonus). See migration 00025 and the deduction logic in `pipeline/src/routes/submitPodcast.ts:176-220`. Deduct from `credits_remaining` first, fall back to `bonus_credits`. |
+| `profiles.voice` column | `profiles.preferred_voice` (migration 00012) |
+| `profiles.onboarding_completed_at timestamptz` | `profiles.onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE` (migration 00014). The root-layout gate at `mobile/app/_layout.tsx:90` checks `profile.preferredVoice IS NOT NULL` — completing onboarding sets `onboarding_complete = true` AND requires `preferred_voice` to be set. |
+| `podcasts.parent_podcast_id`, `source_chapter_title`, `voice`, `cover_url`, `transcript_url`, `chapter_transcripts` | The base table (00001) has none of these except `audio_url` + `chapter_markers` + `transcript`. Voice was added in 00012, cover_url in 00011, parent_podcast_id + source_chapter_title + chapter_transcripts in 00019. **There is no `chapter_transcripts` column** — that's actually `transcript` text. The expansion pipeline reads chapter transcripts from a different mechanism: `parentChapterTranscript` is built at submit time from the parent's research_contexts.chapter_research_map + the parent's `transcript`. |
+| Next migration number | **00028** (00023-00027 are taken: security_hardening, rls_and_trigger_hardening, signup_bonus_credits, soft_delete_podcast_rpc, share_tree_source_chapter) |
+| `JobManager.enqueue(podcastId)` | **`enqueue(podcastId: string, input: Partial<PipelineStateType>): Job`** — requires full pipeline input (userId, topic, voice, parentPodcastId, sourceChapterTitle, parentResearchDigest, parentChapterTranscript, hasUsedExpand, tier, etc.). See `submitPodcast.ts:140-160` for the expansion path's input shape. The clone-and-expand endpoint must build the same shape — most fields come from `parent` row + `parent.research_contexts`. |
+| `get_shared_tree` returns rows in topological order | **No ORDER BY in the RPC.** Sibling/depth ordering is implementation-defined. For storage-copy pairing we either need to add ORDER BY to `get_shared_tree` in a new migration, OR extend `clone_shared_tree` to return source ids alongside cloned ids. **Plan picks the second option** — clone_shared_tree returns `source_ids[]` parallel to `cloned_descendant_ids[]`, so the endpoint can pair without depending on ordering. |
+| `mobile/app.config.ts` | Only `mobile/app.json` exists. Edit that. |
+| `mobile/src/hooks/useProfile.ts` | `mobile/src/hooks/useProfile.tsx` — uses `ProfileProvider` + React context. `ProfileContextType` has `{ id, displayName, preferredVoice, onboardingComplete, refresh }`. Need to add `pushPromptedAt` and `markPushPrompted` to that contract. |
+| `usePushNotifications().requestPermission()` exported | The hook runs `Notifications.requestPermissionsAsync()` inside a `useEffect` on sign-in. It does **NOT** export `requestPermission`. Either refactor to expose it OR call `expo-notifications` directly from PushPermissionSheet. |
+| Player `descendants` array | Player uses `useChapterExpansions(parentPodcastId)` returning `Map<chapterTitle, { podcastId, status }>`. Derive cooking-state from `Array.from(map.values()).some(e => e.status === "queued" || e.status === "processing")`. |
+| Post-sign-in resume in `sign-in.tsx` | Post-sign-in redirect is centralized in `mobile/app/_layout.tsx:60-97`. Resume-pending-expansion logic belongs there. |
+| `realtime publication for podcasts` needs migration | Already in place — migration 00009 added `podcasts` to `supabase_realtime`. No new work needed. |
+
+Additional Supabase Dashboard config (not in code, but required for launch — flag during deploy):
+- Apple OAuth provider configured in Supabase Dashboard with the Apple Services ID + key
+- Google OAuth provider configured with the GCP OAuth client
+- `https://katavoapp.com/p/*` added to the Supabase Auth redirect URL allowlist
+- DNS for `katavoapp.com` points at Railway
+
+---
+
 ## File Structure
 
 ### New files
 
 | Path | Purpose |
 |---|---|
-| `supabase/migrations/00023_clone_shared_tree.sql` | `cloned_from_share_token` column + idempotency index + same-chapter race-guard index + `clone_shared_tree` RPC |
-| `supabase/migrations/00024_session_claim_tokens.sql` | Single-use claim token storage + cleanup index |
-| `supabase/migrations/00025_push_prompted_at.sql` | `push_prompted_at` on profiles + backfill |
+| `supabase/migrations/00028_clone_shared_tree.sql` | `cloned_from_share_token` column + idempotency index + same-chapter race-guard index + `clone_shared_tree` RPC |
+| `supabase/migrations/00029_session_claim_tokens.sql` | Single-use claim token storage + cleanup index |
+| `supabase/migrations/00030_push_prompted_at.sql` | `push_prompted_at` on profiles + backfill |
 | `pipeline/src/lib/claimToken.ts` | JWT sign/verify helpers for the session-claim token |
 | `pipeline/src/lib/storageCopy.ts` | Idempotent storage-copy helper used by clone-and-expand |
 | `pipeline/src/lib/claimEmail.ts` | Resend-backed transactional email for "Open in app" link |
@@ -48,10 +76,10 @@
 | `pipeline/src/server.ts` | Mount cloneAndExpand, claimSession, wellKnown routes; start cleanup cron |
 | `pipeline/src/routes/shareTemplate.ts` | Modal becomes auth panel; State B + C rendering; Universal Link CTA generation |
 | `pipeline/src/routes/sharePage.ts` | Pass through `chapter` query param and signed-in user state |
-| `mobile/app.config.ts` | iOS `associatedDomains`; Android intentFilters for `/expand/*` |
+| `mobile/app.json` | iOS `associatedDomains`; Android intentFilters for `/expand/*` |
 | `mobile/app/_layout.tsx` | Wire `useDeepLinkContext` to survive the auth navigation |
 | `mobile/app/player/[id]/index.tsx` | Mount PushPermissionSheet on cooking view |
-| `mobile/src/hooks/useProfile.ts` | Read `push_prompted_at` |
+| `mobile/src/hooks/useProfile.tsx` | Read `push_prompted_at` |
 | `mobile/src/types/database.ts` | Regenerate or hand-edit for new columns |
 | `pipeline/package.json` | Add `jose` (JWT) + `resend` deps |
 
@@ -89,12 +117,12 @@ If the query returned rows, halt the plan and ask the user how to resolve. Likel
 ### Task 2: Migration 00023 — clone token, indexes, RPC
 
 **Files:**
-- Create: `supabase/migrations/00023_clone_shared_tree.sql`
+- Create: `supabase/migrations/00028_clone_shared_tree.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 00023_clone_shared_tree.sql
+-- 00028_clone_shared_tree.sql
 -- Adds support for cloning a shared podcast tree into another user's
 -- account. The clone_shared_tree RPC walks the source tree (root +
 -- descendants reachable via share_token) and INSERTs duplicates owned
@@ -128,23 +156,32 @@ CREATE OR REPLACE FUNCTION public.clone_shared_tree(
 RETURNS TABLE (
   cloned_parent_id uuid,
   cloned_descendant_ids uuid[],
-  descendant_source_chapters text[]
+  descendant_source_chapters text[],
+  source_parent_id uuid,
+  source_descendant_ids uuid[]
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_existing_parent uuid;
+  v_existing_source_parent uuid;
   v_descendant_ids uuid[] := ARRAY[]::uuid[];
   v_descendant_chapters text[] := ARRAY[]::text[];
+  v_source_descendant_ids uuid[] := ARRAY[]::uuid[];
   v_id_map jsonb := '{}'::jsonb;
   v_source record;
   v_new_id uuid;
   v_new_parent uuid;
 BEGIN
   -- Idempotency: if this user already cloned this token, return the
-  -- existing tree without re-inserting anything.
+  -- existing tree without re-inserting anything. We do NOT have stored
+  -- source ids on the cloned rows, so the idempotency branch returns
+  -- nulls for source_parent_id / source_descendant_ids — the caller
+  -- can re-derive from get_shared_tree if needed, but for the typical
+  -- "already cloned, skip storage copy" path the source ids aren't
+  -- consulted because the storage copy is itself idempotent.
   SELECT id INTO v_existing_parent
   FROM podcasts
   WHERE user_id = p_target_user_id
@@ -163,30 +200,34 @@ BEGIN
     cloned_parent_id := v_existing_parent;
     cloned_descendant_ids := v_descendant_ids;
     descendant_source_chapters := v_descendant_chapters;
+    source_parent_id := NULL;
+    source_descendant_ids := ARRAY[]::uuid[];
     RETURN NEXT;
     RETURN;
   END IF;
 
-  -- Walk the source tree (same recursion as get_shared_tree from 00022)
-  -- and INSERT clones. We insert in topological order (root first, then
-  -- children) so parent_podcast_id can be remapped through v_id_map.
+  -- Walk the source tree. share_token is only ever stamped on the
+  -- root (per v20 design), so the base case yields exactly one row.
+  -- We insert in topological order (root first, then children) so
+  -- parent_podcast_id can be remapped through v_id_map.
   FOR v_source IN
     WITH RECURSIVE tree AS (
       SELECT
-        p.id, p.user_id, p.parent_podcast_id, p.topic, p.voice,
-        p.audio_url, p.transcript_url, p.cover_url,
-        p.chapter_markers, p.duration_seconds,
+        p.id, p.user_id, p.parent_podcast_id, p.topic, p.preferred_voice,
+        p.audio_url, p.transcript, p.cover_url,
+        p.chapter_markers, p.duration_seconds, p.chapter_transcripts,
         p.source_chapter_title, p.status, p.created_at,
         true AS is_root, 0 AS depth
       FROM podcasts p
       WHERE p.share_token = p_share_token
         AND p.deleted_at IS NULL
         AND p.status = 'complete'
+        AND p.parent_podcast_id IS NULL
       UNION ALL
       SELECT
-        p.id, p.user_id, p.parent_podcast_id, p.topic, p.voice,
-        p.audio_url, p.transcript_url, p.cover_url,
-        p.chapter_markers, p.duration_seconds,
+        p.id, p.user_id, p.parent_podcast_id, p.topic, p.preferred_voice,
+        p.audio_url, p.transcript, p.cover_url,
+        p.chapter_markers, p.duration_seconds, p.chapter_transcripts,
         p.source_chapter_title, p.status, p.created_at,
         false AS is_root, t.depth + 1
       FROM podcasts p
@@ -196,8 +237,12 @@ BEGIN
     )
     SELECT * FROM tree ORDER BY depth, created_at
   LOOP
-    -- First iteration must be the root; if no rows at all the share
-    -- token is invalid or revoked.
+    -- Note: column `preferred_voice` referenced above doesn't exist on
+    -- podcasts — the per-row voice column is actually `voice` text
+    -- (added in 00012). VERIFY: open 00012_voice_selection.sql and
+    -- confirm whether the column on `podcasts` is `voice` or
+    -- `preferred_voice`. (It's `voice` on podcasts; `preferred_voice`
+    -- lives on profiles.) Fix this query before applying the migration.
     v_new_id := gen_random_uuid();
     v_id_map := v_id_map || jsonb_build_object(v_source.id::text, v_new_id::text);
     v_new_parent := NULL;
@@ -207,42 +252,49 @@ BEGIN
 
     INSERT INTO podcasts (
       id, user_id, parent_podcast_id, topic, voice,
-      audio_url, transcript_url, cover_url,
-      chapter_markers, duration_seconds,
+      audio_url, transcript, cover_url,
+      chapter_markers, duration_seconds, chapter_transcripts,
       source_chapter_title, status,
       cloned_from_share_token
     ) VALUES (
       v_new_id, p_target_user_id, v_new_parent, v_source.topic, v_source.voice,
-      v_source.audio_url, v_source.transcript_url, v_source.cover_url,
-      v_source.chapter_markers, v_source.duration_seconds,
+      v_source.audio_url, v_source.transcript, v_source.cover_url,
+      v_source.chapter_markers, v_source.duration_seconds, v_source.chapter_transcripts,
       v_source.source_chapter_title, 'complete',
       p_share_token
     );
 
-    -- Duplicate the research_contexts row for this podcast so the new
-    -- owner can re-expand chapters without depending on User A's data.
+    -- Duplicate the research_contexts row so the new owner can re-expand
+    -- chapters without depending on User A's data. NB: the actual columns
+    -- on research_contexts are (id, podcast_id, research_document, sources,
+    -- overall_credibility_score, research_iterations, chapter_research_map
+    -- — added in 00019). Verify against migrations before applying.
     INSERT INTO research_contexts (
-      podcast_id, research_document, sources, chapter_research_map
+      podcast_id, research_document, sources,
+      overall_credibility_score, research_iterations, chapter_research_map
     )
-    SELECT v_new_id, rc.research_document, rc.sources, rc.chapter_research_map
+    SELECT v_new_id, rc.research_document, rc.sources,
+           rc.overall_credibility_score, rc.research_iterations, rc.chapter_research_map
     FROM research_contexts rc
     WHERE rc.podcast_id = v_source.id;
 
     IF v_source.is_root THEN
       cloned_parent_id := v_new_id;
+      source_parent_id := v_source.id;
     ELSE
       v_descendant_ids := v_descendant_ids || v_new_id;
       v_descendant_chapters := v_descendant_chapters || v_source.source_chapter_title;
+      v_source_descendant_ids := v_source_descendant_ids || v_source.id;
     END IF;
   END LOOP;
 
-  -- No root found means the share token is revoked or never existed.
   IF cloned_parent_id IS NULL THEN
     RAISE EXCEPTION 'share_revoked' USING ERRCODE = 'P0001';
   END IF;
 
   cloned_descendant_ids := v_descendant_ids;
   descendant_source_chapters := v_descendant_chapters;
+  source_descendant_ids := v_source_descendant_ids;
   RETURN NEXT;
 END;
 $$;
@@ -255,7 +307,7 @@ GRANT EXECUTE ON FUNCTION public.clone_shared_tree(text, uuid)
 
 - [ ] **Step 2: Apply migration via Supabase MCP**
 
-Use `mcp__supabase__apply_migration` with name `00023_clone_shared_tree` and the SQL above. Confirm via `mcp__supabase__list_migrations` that the row appears.
+Use `mcp__supabase__apply_migration` with name `00028_clone_shared_tree` and the SQL above. Confirm via `mcp__supabase__list_migrations` that the row appears.
 
 - [ ] **Step 3: Verify column, indexes, and RPC exist**
 
@@ -334,7 +386,7 @@ DELETE FROM podcasts WHERE cloned_from_share_token = '<token>' AND user_id = '<u
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/00023_clone_shared_tree.sql
+git add supabase/migrations/00028_clone_shared_tree.sql
 git commit -m "$(cat <<'EOF'
 feat(db): clone_shared_tree RPC + idempotency and race indexes
 
@@ -355,12 +407,12 @@ EOF
 ### Task 3: Migration 00024 — session_claim_tokens
 
 **Files:**
-- Create: `supabase/migrations/00024_session_claim_tokens.sql`
+- Create: `supabase/migrations/00029_session_claim_tokens.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 00024_session_claim_tokens.sql
+-- 00029_session_claim_tokens.sql
 -- Storage for single-use session-claim JWTs. The pipeline server signs
 -- a JWT (jose lib), stamps a row here at issue time, and atomically
 -- updates redeemed_at at claim time. Concurrent redeem attempts race
@@ -387,7 +439,7 @@ GRANT ALL ON public.session_claim_tokens TO service_role;
 
 - [ ] **Step 2: Apply via Supabase MCP**
 
-Use `mcp__supabase__apply_migration` with name `00024_session_claim_tokens`.
+Use `mcp__supabase__apply_migration` with name `00029_session_claim_tokens`.
 
 - [ ] **Step 3: Verify**
 
@@ -405,7 +457,7 @@ SELECT has_table_privilege('anon', 'public.session_claim_tokens', 'SELECT'),
 - [ ] **Step 4: Commit**
 
 ```bash
-git add supabase/migrations/00024_session_claim_tokens.sql
+git add supabase/migrations/00029_session_claim_tokens.sql
 git commit -m "$(cat <<'EOF'
 feat(db): session_claim_tokens table for single-use session handoff
 
@@ -420,12 +472,12 @@ EOF
 ### Task 4: Migration 00025 — push_prompted_at with backfill
 
 **Files:**
-- Create: `supabase/migrations/00025_push_prompted_at.sql`
+- Create: `supabase/migrations/00030_push_prompted_at.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 00025_push_prompted_at.sql
+-- 00030_push_prompted_at.sql
 -- Gate for the "We'll ping you when your podcast is ready" sheet that
 -- appears on the cooking view for users coming through a shared link.
 -- Backfilled for users who already completed onboarding (they were
@@ -434,15 +486,18 @@ EOF
 ALTER TABLE public.profiles
   ADD COLUMN push_prompted_at timestamptz;
 
+-- Backfill: any user past v9 onboarding (onboarding_complete = true
+-- from migration 00014) was already prompted for push during
+-- onboarding and shouldn't see the cooking-view sheet again.
 UPDATE public.profiles
    SET push_prompted_at = now()
- WHERE onboarding_completed_at IS NOT NULL
+ WHERE onboarding_complete = true
    AND push_prompted_at IS NULL;
 ```
 
 - [ ] **Step 2: Apply via Supabase MCP**
 
-Use `mcp__supabase__apply_migration` with name `00025_push_prompted_at`.
+Use `mcp__supabase__apply_migration` with name `00030_push_prompted_at`.
 
 - [ ] **Step 3: Verify backfill**
 
@@ -458,7 +513,7 @@ FROM profiles;
 - [ ] **Step 4: Commit**
 
 ```bash
-git add supabase/migrations/00025_push_prompted_at.sql
+git add supabase/migrations/00030_push_prompted_at.sql
 git commit -m "$(cat <<'EOF'
 feat(db): push_prompted_at column + backfill
 
@@ -1197,16 +1252,23 @@ route.post("/", userAuth, async (c) => {
   const clonedParentId: string = cloneRow.cloned_parent_id;
   const descendantChapters: string[] = cloneRow.descendant_source_chapters ?? [];
 
-  // 2. Load cloned parent to resolve chapter title, voice, and source paths
+  // 2. Load cloned parent to resolve chapter title + voice + source paths.
+  //    Also load the parent's research_context for building the pipeline
+  //    payload in step 6 (parentResearchDigest, parentChapterTranscript).
   const { data: parent, error: parentErr } = await supabase
     .from("podcasts")
-    .select("id, user_id, voice, cover_url, transcript_url, chapter_markers")
+    .select("id, user_id, voice, cover_url, chapter_markers, topic, chapter_transcripts, transcript")
     .eq("id", clonedParentId)
     .maybeSingle();
   if (parentErr || !parent) {
     console.error("loading cloned parent failed:", parentErr);
     return c.json({ error: "internal" }, 500);
   }
+  const { data: parentResearch } = await supabase
+    .from("research_contexts")
+    .select("research_document")
+    .eq("podcast_id", clonedParentId)
+    .maybeSingle();
 
   const markers: { timestampSeconds: number; title: string }[] =
     Array.isArray(parent.chapter_markers) ? parent.chapter_markers : [];
@@ -1215,60 +1277,55 @@ route.post("/", userAuth, async (c) => {
   }
   const sourceChapterTitle = markers[chapterIndex].title;
 
-  // 3. Storage copy step — for the parent and each cloned descendant.
-  //    We discover the (sourceUserId, sourcePodcastId) pairs by reading
-  //    the source share tree once more — alternative is to extend the
-  //    RPC to return source ids, but doing it here keeps the RPC tight.
-  const { data: tree, error: treeErr } = await supabase.rpc("get_shared_tree", {
-    p_token: shareToken,
-  });
-  if (treeErr) {
-    console.error("get_shared_tree failed:", treeErr);
-    return c.json({ error: "internal" }, 500);
-  }
+  // 3. Storage copy step — pair source ids with cloned ids using the
+  //    parallel arrays the RPC returned. No ordering dependency on
+  //    get_shared_tree.
   const copyClient = makeSupabaseCopyClient(supabase);
-  // Pair each source row with its cloned counterpart by walking in the
-  // same topological order. We use cloned_descendant_ids + the parent
-  // to build the cloned-id-by-source-chapter-title map.
-  const allClonedIds = [clonedParentId, ...(cloneRow.cloned_descendant_ids ?? [])];
-  // Cloned rows have audio_url/cover_url/transcript_url initially pointing
-  // at the source paths; we rewrite them after copy. For storage copy,
-  // we need original (sourceUserId, sourcePodcastId). The tree rows give
-  // us source ids; we map old_id → cloned_id by topological order.
-  // Simpler approach: trust that source-tree ordering and cloned-id
-  // ordering align (the RPC inserts in topological order).
-  const sourceRowsOrdered = tree
-    .filter((r: any) => r.is_root)
-    .concat(tree.filter((r: any) => !r.is_root));
-  if (sourceRowsOrdered.length !== allClonedIds.length) {
-    console.error("clone/source length mismatch — storage copy aborted");
-    return c.json({ error: "internal" }, 500);
+  const sourceParentId: string | null = cloneRow.source_parent_id ?? null;
+  const sourceDescIds: string[] = cloneRow.source_descendant_ids ?? [];
+  const clonedDescIds: string[] = cloneRow.cloned_descendant_ids ?? [];
+
+  // Pull source rows once for hasCover detection.
+  const allSourceIds = sourceParentId ? [sourceParentId, ...sourceDescIds] : sourceDescIds;
+  const { data: sourceRows } = await supabase
+    .from("podcasts")
+    .select("id, user_id, cover_url")
+    .in("id", allSourceIds);
+  const sourceById = new Map((sourceRows ?? []).map((r: any) => [r.id, r]));
+
+  const pairs: { srcId: string; cloneId: string }[] = [];
+  if (sourceParentId) pairs.push({ srcId: sourceParentId, cloneId: clonedParentId });
+  for (let i = 0; i < sourceDescIds.length; i++) {
+    pairs.push({ srcId: sourceDescIds[i], cloneId: clonedDescIds[i] });
   }
-  for (let i = 0; i < sourceRowsOrdered.length; i++) {
-    const src = sourceRowsOrdered[i];
-    const cloneId = allClonedIds[i];
-    try {
-      const result = await copyPodcastBlobs(copyClient, {
-        sourceUserId: src.user_id,
-        sourcePodcastId: src.id,
-        targetUserId: user.id,
-        targetPodcastId: cloneId,
-        hasCover: src.has_cover === true,
-        hasTranscript: true, // every complete podcast has a transcript
-      });
-      // Update cloned row's URL columns to point at new paths.
-      await supabase
-        .from("podcasts")
-        .update({
-          audio_url: result.audioPath,
-          cover_url: result.coverPath,
-          transcript_url: result.transcriptPath,
-        })
-        .eq("id", cloneId);
-    } catch (err) {
-      console.error(`storage copy failed for ${cloneId}:`, err);
-      // Don't bail — partial state is recoverable on retry. Continue
-      // so the user still gets something.
+
+  // Idempotency-branch case: source ids are null because we skipped the
+  // RPC's INSERT path. Storage copy is also idempotent (existence-check
+  // before copy), and the cloned rows already have the correct URL
+  // columns from a prior successful run, so skipping is safe.
+  if (sourceParentId !== null) {
+    for (const { srcId, cloneId } of pairs) {
+      const src = sourceById.get(srcId);
+      if (!src) continue;
+      try {
+        const result = await copyPodcastBlobs(copyClient, {
+          sourceUserId: src.user_id,
+          sourcePodcastId: srcId,
+          targetUserId: user.id,
+          targetPodcastId: cloneId,
+          hasCover: src.cover_url !== null,
+          hasTranscript: false, // transcript is a text column on podcasts, no separate file
+        });
+        const updateFields: Record<string, string | null> = { audio_url: result.audioPath };
+        if (result.coverPath !== null) updateFields.cover_url = result.coverPath;
+        await supabase.from("podcasts").update(updateFields).eq("id", cloneId);
+      } catch (err) {
+        console.error(`storage copy failed for ${cloneId}:`, err);
+        // Don't bail — partial state is recoverable on retry. Continue
+        // so the user still gets the parent + any successfully-copied
+        // descendants. The credit-exhaustion error path in the spec is
+        // explicit about this trade-off.
+      }
     }
   }
 
@@ -1284,7 +1341,10 @@ route.post("/", userAuth, async (c) => {
   }
 
   // 5. Transactional credit deduction + expansion row insert.
-  //    We use a single RPC for atomicity (see Task 11 — deduct_credit_and_insert_expansion).
+  //    Single RPC for atomicity (see Task 10).
+  //    Topic mirrors submit-podcast's expansion convention:
+  //      `${parent.topic}: ${sourceChapterTitle}`.
+  const expansionTopic = `${parent.topic}: ${sourceChapterTitle}`;
   const { data: insertRow, error: insertErr } = await supabase.rpc(
     "deduct_credit_and_insert_expansion",
     {
@@ -1292,6 +1352,7 @@ route.post("/", userAuth, async (c) => {
       p_parent_podcast_id: clonedParentId,
       p_source_chapter_title: sourceChapterTitle,
       p_voice: parent.voice,
+      p_topic: expansionTopic,
     },
   );
   if (insertErr) {
@@ -1322,9 +1383,31 @@ route.post("/", userAuth, async (c) => {
   const expansionRow = Array.isArray(insertRow) ? insertRow[0] : insertRow;
   const expansionId: string = expansionRow.expansion_id;
 
-  // 6. Enqueue the pipeline job.
+  // 6. Build pipeline input and enqueue. The expansion pipeline needs
+  //    the SAME shape submit-podcast builds (see submitPodcast.ts:140-160).
+  //    Key fields: topic, voice, parent_podcast_id, source_chapter_title,
+  //    parentResearchDigest (built from parent's research_document),
+  //    parentChapterTranscript (built from parent.chapter_transcripts +
+  //    chapter title), hasUsedExpand (true if parent has other expansions),
+  //    tier (from subscriptions row).
+  //
+  //    The implementer should extract submit-podcast's payload-building
+  //    helpers (`buildResearchDigest`, `buildChapterTranscript`,
+  //    parentContext fetch) into shared helpers in
+  //    pipeline/src/lib/expansionInput.ts so both submit-podcast and
+  //    clone-and-expand build identical payloads. This is the larger
+  //    refactor Task 13 should accomplish (see Task 13 below).
   try {
-    await enqueuePipelineJob(expansionId);
+    const expansionInput = await buildExpansionInput({
+      supabase,
+      userId: user.id,
+      expansionId,
+      clonedParent: parent,
+      parentResearch,
+      sourceChapterTitle,
+      voice: parent.voice,
+    });
+    await enqueuePipelineJob(expansionId, expansionInput);
   } catch (err) {
     console.error("enqueue failed; marking expansion as failed:", err);
     await supabase.from("podcasts").update({ status: "failed" }).eq("id", expansionId);
@@ -1338,8 +1421,8 @@ route.post("/", userAuth, async (c) => {
     await supabase
       .from("profiles")
       .update({
-        onboarding_completed_at: new Date().toISOString(),
-        voice: parent.voice,
+        onboarding_complete: true,
+        preferred_voice: parent.voice ?? null,
       })
       .eq("id", user.id);
 
@@ -1379,13 +1462,13 @@ export { route as cloneAndExpandRoute };
 ### Task 10: deduct_credit_and_insert_expansion SQL function
 
 **Files:**
-- Modify: `supabase/migrations/00023_clone_shared_tree.sql` — NO. Add a new migration so 00023 stays atomic.
-- Create: `supabase/migrations/00026_deduct_and_insert.sql`
+- Modify: `supabase/migrations/00028_clone_shared_tree.sql` — NO. Add a new migration so 00023 stays atomic.
+- Create: `supabase/migrations/00031_deduct_credit_and_insert_expansion.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 00026_deduct_and_insert.sql
+-- 00031_deduct_credit_and_insert_expansion.sql
 -- Atomic credit-deduction + expansion-row insert for the
 -- /api/share/clone-and-expand endpoint. The two ops must be in the
 -- same transaction so we never debit a credit without an expansion
@@ -1397,26 +1480,41 @@ CREATE OR REPLACE FUNCTION public.deduct_credit_and_insert_expansion(
   p_user_id uuid,
   p_parent_podcast_id uuid,
   p_source_chapter_title text,
-  p_voice text
+  p_voice text,
+  p_topic text
 )
 RETURNS TABLE (expansion_id uuid)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_expansion_id uuid := gen_random_uuid();
-  v_credits_remaining int;
+  v_deducted boolean := false;
 BEGIN
-  -- Row-locked predicate decrement. Two concurrent calls serialize on
-  -- the subscription row; the second sees the post-decrement value.
+  -- Two-bucket deduction matching submitPodcast.ts:176-220 pattern.
+  -- credits_remaining is the monthly bucket (use-it-or-lose-it,
+  -- reset by RevenueCat webhooks). bonus_credits is the signup bonus
+  -- (never touched by webhooks). Deduct from credits_remaining first,
+  -- fall back to bonus_credits when monthly is empty. Both UPDATEs
+  -- are row-locked so concurrent calls serialize.
   UPDATE subscriptions
-     SET credits = credits - 1
+     SET credits_remaining = credits_remaining - 1
    WHERE user_id = p_user_id
-     AND credits > 0
-   RETURNING credits INTO v_credits_remaining;
+     AND credits_remaining > 0;
+  IF FOUND THEN
+    v_deducted := true;
+  ELSE
+    UPDATE subscriptions
+       SET bonus_credits = bonus_credits - 1
+     WHERE user_id = p_user_id
+       AND bonus_credits > 0;
+    IF FOUND THEN
+      v_deducted := true;
+    END IF;
+  END IF;
 
-  IF v_credits_remaining IS NULL THEN
+  IF NOT v_deducted THEN
     RAISE EXCEPTION 'insufficient_credits' USING ERRCODE = 'P0002';
   END IF;
 
@@ -1429,9 +1527,7 @@ BEGIN
       voice, status, topic
     ) VALUES (
       v_expansion_id, p_user_id, p_parent_podcast_id, p_source_chapter_title,
-      p_voice, 'queued',
-      -- topic gets filled in by the pipeline; placeholder for NOT NULL
-      'Expansion: ' || p_source_chapter_title
+      p_voice, 'queued', p_topic
     );
   EXCEPTION
     WHEN unique_violation THEN
@@ -1443,15 +1539,15 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.deduct_credit_and_insert_expansion(uuid, uuid, text, text)
+REVOKE ALL ON FUNCTION public.deduct_credit_and_insert_expansion(uuid, uuid, text, text, text)
   FROM public, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.deduct_credit_and_insert_expansion(uuid, uuid, text, text)
+GRANT EXECUTE ON FUNCTION public.deduct_credit_and_insert_expansion(uuid, uuid, text, text, text)
   TO service_role;
 ```
 
 - [ ] **Step 2: Apply via Supabase MCP**
 
-Use `mcp__supabase__apply_migration` with name `00026_deduct_and_insert`.
+Use `mcp__supabase__apply_migration` with name `00031_deduct_credit_and_insert_expansion`.
 
 - [ ] **Step 3: Verify the function exists**
 
@@ -1496,7 +1592,7 @@ UPDATE subscriptions SET credits = credits + 1 WHERE user_id = '<user_id>'::uuid
 - [ ] **Step 5: Commit migration + cloneAndExpand route + test together**
 
 ```bash
-cd "/Users/isuru/personal/AI Podcast App" && git add supabase/migrations/00026_deduct_and_insert.sql pipeline/src/routes/cloneAndExpand.ts pipeline/tests/cloneAndExpand.test.ts && git commit -m "$(cat <<'EOF'
+cd "/Users/isuru/personal/AI Podcast App" && git add supabase/migrations/00031_deduct_credit_and_insert_expansion.sql pipeline/src/routes/cloneAndExpand.ts pipeline/tests/cloneAndExpand.test.ts && git commit -m "$(cat <<'EOF'
 feat(pipeline): clone-and-expand endpoint + atomic credit-and-insert RPC
 
 POST /api/share/clone-and-expand is the main entry point for the
@@ -1695,51 +1791,177 @@ EOF
 )"
 ```
 
-### Task 13: Export `enqueuePipelineJob` from submitPodcast for reuse
+### Task 13: Extract shared expansion-payload builder + `enqueuePipelineJob`
 
 **Files:**
+- Create: `pipeline/src/lib/expansionInput.ts`
 - Modify: `pipeline/src/routes/submitPodcast.ts`
+- Test: `pipeline/tests/expansionInput.test.ts`
 
-- [ ] **Step 1: Find the existing job-manager push logic**
+This task does more than a thin re-export. The cloneAndExpand route in Task 9 expects:
+- `buildExpansionInput({ supabase, userId, expansionId, clonedParent, parentResearch, sourceChapterTitle, voice })` returning a `Partial<PipelineStateType>` shaped exactly like submit-podcast's expansion path produces.
+- `enqueuePipelineJob(podcastId, input)` — a thin wrapper that takes the same shape `JobManager.enqueue` requires.
+
+**This task must complete BEFORE Tasks 9-12 run as-written.** Reorder the chunk so Task 13 lands first, OR fold this work into Task 9 as steps preceding the route implementation.
+
+- [ ] **Step 1: Read submitPodcast.ts to understand the existing expansion-input shape**
 
 ```bash
-grep -n "jobManager" "/Users/isuru/personal/AI Podcast App/pipeline/src/routes/submitPodcast.ts"
+sed -n '90,165p' "/Users/isuru/personal/AI Podcast App/pipeline/src/routes/submitPodcast.ts"
 ```
 
-- [ ] **Step 2: Export a thin function**
+Read lines 90-160 carefully. The expansion path builds:
+- `topic: ${parent.topic}: ${sourceChapterTitle}`
+- `voice` from parent.voice
+- `parentPodcastId`, `sourceChapterTitle`
+- `parentResearchDigest` via `buildResearchDigest(parent.research_document)`
+- `parentChapterTranscript` from `parent.chapter_transcripts?.[sourceChapterTitle]`
+- `hasUsedExpand: true` flag-style for the audioProducer (per v17)
+- `tier` from subscriptions
+- `clarifyingAnswers: []` (skipped for expansions)
 
-Locate the section in `submitPodcast.ts` that pushes a job onto `jobManager` for a given podcast id. Extract it into an exported function `enqueuePipelineJob(podcastId: string): Promise<void>` that the cloneAndExpand route already imports. The function reads from the module-level `jobManager` that `setJobManager` already populates.
+Identify `buildResearchDigest` and any other helpers it uses.
 
-Skeleton:
+- [ ] **Step 2: Extract `buildResearchDigest` and any helpers into `pipeline/src/lib/expansionInput.ts`**
+
+Move the pure functions out of submitPodcast.ts into a new file. Re-export them from submitPodcast so existing imports still work, OR update submitPodcast to import from the new file.
+
+- [ ] **Step 3: Implement `buildExpansionInput` and `enqueuePipelineJob`**
+
 ```ts
-export async function enqueuePipelineJob(podcastId: string): Promise<void> {
-  if (!jobManager) throw new Error("job manager not initialized");
-  await jobManager.enqueue(podcastId);
+// pipeline/src/lib/expansionInput.ts
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PipelineStateType } from "../podcast_pipeline/state.js";
+
+export type BuildExpansionInputArgs = {
+  supabase: SupabaseClient;
+  userId: string;
+  expansionId: string;
+  clonedParent: {
+    id: string;
+    topic: string;
+    voice: string | null;
+    chapter_transcripts: Record<string, string> | null;
+  };
+  parentResearch: { research_document: any } | null;
+  sourceChapterTitle: string;
+  voice: string | null;
+};
+
+export async function buildExpansionInput(args: BuildExpansionInputArgs): Promise<Partial<PipelineStateType>> {
+  const { clonedParent, parentResearch, sourceChapterTitle, voice, userId } = args;
+  const chapterTranscript = clonedParent.chapter_transcripts?.[sourceChapterTitle] ?? "";
+  const parentResearchDigest = parentResearch?.research_document
+    ? buildResearchDigest(parentResearch.research_document)
+    : "";
+
+  // Look up tier from subscriptions
+  const { data: sub } = await args.supabase
+    .from("subscriptions")
+    .select("tier")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const tier = sub?.tier ?? "free";
+
+  return {
+    userId,
+    podcastId: args.expansionId,
+    topic: `${clonedParent.topic}: ${sourceChapterTitle}`,
+    voice,
+    parentPodcastId: clonedParent.id,
+    sourceChapterTitle,
+    parentChapterTranscript: chapterTranscript,
+    parentResearchDigest,
+    hasUsedExpand: true,
+    tier,
+    clarifyingAnswers: [],
+  };
+}
+
+export function buildResearchDigest(researchDocument: any): string {
+  // Move the existing implementation from submitPodcast.ts here. Same body.
+  // Returns the digest string the deepResearch node consumes for expansion.
 }
 ```
 
-- [ ] **Step 3: Update submitPodcast itself to call this shared function**
+Then add to `pipeline/src/routes/submitPodcast.ts`:
 
-DRY — replace any inline `jobManager.enqueue` calls in submitPodcast with `await enqueuePipelineJob(...)`.
+```ts
+import type { PipelineStateType } from "../podcast_pipeline/state.js";
 
-- [ ] **Step 4: Run all pipeline tests**
+export async function enqueuePipelineJob(
+  podcastId: string,
+  input: Partial<PipelineStateType>,
+): Promise<void> {
+  if (!jobManager) throw new Error("job manager not initialized");
+  await jobManager.enqueue(podcastId, input);
+}
+```
+
+- [ ] **Step 4: Replace inline calls in submitPodcast.ts**
+
+DRY — submitPodcast.ts probably has `jobManager.enqueue(podcast.id, { ... })` inline at the bottom of its happy path. Replace with `await enqueuePipelineJob(podcast.id, {...})`.
+
+- [ ] **Step 5: Write a test for `buildExpansionInput`**
+
+```ts
+// pipeline/tests/expansionInput.test.ts
+import { describe, expect, it } from "vitest";
+import { buildExpansionInput } from "../src/lib/expansionInput.js";
+
+describe("buildExpansionInput", () => {
+  it("builds the expected shape from a cloned parent + research context", async () => {
+    const mockSupabase: any = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: { tier: "free" } }) }),
+        }),
+      }),
+    };
+    const result = await buildExpansionInput({
+      supabase: mockSupabase,
+      userId: "user-1",
+      expansionId: "exp-1",
+      clonedParent: {
+        id: "parent-1",
+        topic: "Topic",
+        voice: "Sulafat",
+        chapter_transcripts: { "Chapter Two": "Body of chapter two..." },
+      },
+      parentResearch: { research_document: { foo: "bar" } },
+      sourceChapterTitle: "Chapter Two",
+      voice: "Sulafat",
+    });
+    expect(result.topic).toBe("Topic: Chapter Two");
+    expect(result.parentChapterTranscript).toBe("Body of chapter two...");
+    expect(result.parentPodcastId).toBe("parent-1");
+    expect(result.hasUsedExpand).toBe(true);
+    expect(result.tier).toBe("free");
+  });
+});
+```
+
+- [ ] **Step 6: Run all pipeline tests**
 
 ```bash
 cd "/Users/isuru/personal/AI Podcast App/pipeline" && npx vitest run
 ```
 
-Expected: all existing tests still pass; new cloneAndExpand tests pass.
+Expected: all existing tests still pass; new expansionInput tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-cd "/Users/isuru/personal/AI Podcast App" && git add pipeline/src/routes/submitPodcast.ts && git commit -m "$(cat <<'EOF'
-refactor(pipeline): extract enqueuePipelineJob for reuse
+cd "/Users/isuru/personal/AI Podcast App" && git add pipeline/src/lib/expansionInput.ts pipeline/src/routes/submitPodcast.ts pipeline/tests/expansionInput.test.ts && git commit -m "$(cat <<'EOF'
+refactor(pipeline): extract buildExpansionInput + enqueuePipelineJob
 
-clone-and-expand needs to push jobs the same way submit-podcast
-does. Extract the call into a shared exported function and call it
-from both routes — keeps the queue ordering and retry config in one
-place.
+clone-and-expand needs to build the exact same pipeline payload
+submit-podcast does for chapter expansions (topic, voice, parent
+context, research digest, chapter transcript, tier, hasUsedExpand).
+Extract into a shared lib so both routes produce identical
+payloads — guards against drift between the two entry points and
+gives audioProducer's coach-mark logic + the deep-research expansion
+path consistent inputs.
 EOF
 )"
 ```
@@ -2607,18 +2829,12 @@ EOF
 
 After this chunk: the mobile app handles `https://katavoapp.com/expand/*` Universal Links, runs the truth-table logic (sign in / redeem / call clone-and-expand), and navigates to the cloned parent's player.
 
-### Task 19: Universal Link config in app.config.ts
+### Task 19: Universal Link config in app.json
 
 **Files:**
-- Modify: `mobile/app.config.ts` (or `app.json` — check which is canonical)
+- Modify: `mobile/app.json`
 
-- [ ] **Step 1: Identify which config file is active**
-
-```bash
-ls "/Users/isuru/personal/AI Podcast App/mobile/" | grep -E "app\.(json|config)"
-```
-
-If both exist, `app.config.ts` takes precedence. Otherwise edit `app.json`.
+The project uses `app.json` (not `app.config.ts`). Edit that file directly.
 
 - [ ] **Step 2: Add iOS associatedDomains and Android intent-filter**
 
@@ -2650,7 +2866,7 @@ Universal Links / App Links require iOS to refetch the AASA on app install. Loca
 - [ ] **Step 4: Commit**
 
 ```bash
-cd "/Users/isuru/personal/AI Podcast App" && git add mobile/app.config.ts mobile/app.json && git commit -m "$(cat <<'EOF'
+cd "/Users/isuru/personal/AI Podcast App" && git add mobile/app.json && git commit -m "$(cat <<'EOF'
 feat(mobile): Universal Link config for katavoapp.com/expand/*
 
 iOS associatedDomains + Android intent-filter for the deep-link
@@ -3026,35 +3242,55 @@ EOF
 )"
 ```
 
-### Task 23: Resume pending expansion after sign-in
+### Task 23: Resume pending expansion after sign-in (in root layout)
 
 **Files:**
-- Modify: `mobile/app/(auth)/sign-in.tsx` (find the existing sign-in screen)
+- Modify: `mobile/app/_layout.tsx` (where the post-sign-in routing gate lives, around lines 60-97)
 
-- [ ] **Step 1: Locate the sign-in success handler**
+The post-sign-in redirect is centralized in the root layout, not the sign-in screen. Putting resume logic in `sign-in.tsx` races the root layout's auto-redirect to `/(tabs)`.
+
+- [ ] **Step 1: Read the existing layout gate**
 
 ```bash
-grep -rn "signInWithIdToken\|signInWithOAuth\|signInWithPassword" "/Users/isuru/personal/AI Podcast App/mobile/app/(auth)/"
+sed -n '50,100p' "/Users/isuru/personal/AI Podcast App/mobile/app/_layout.tsx"
 ```
 
-- [ ] **Step 2: After successful sign-in, check for pending expansion**
+You'll see a pattern like:
+```tsx
+useEffect(() => {
+  if (session && inAuthGroup) {
+    router.replace("/(tabs)");
+  } else if (!session && !inAuthGroup) {
+    router.replace("/(auth)/sign-in");
+  }
+}, [session, segments]);
+```
 
-In the sign-in success path, after the Supabase session is established:
+- [ ] **Step 2: Add pending-expansion resume to the existing effect**
+
+Before the `router.replace("/(tabs)")` line, check for pending expansion:
 
 ```tsx
-import { useDeepLinkContext } from "../../src/hooks/useDeepLinkContext";
+import { useDeepLinkContext } from "../src/hooks/useDeepLinkContext";
 
-// inside the component...
+// inside the component
 const { pending, clear } = useDeepLinkContext();
 
-// after successful sign-in:
-if (pending) {
-  await clear();
-  router.replace(`/expand/${pending.shareToken}/${pending.chapterIndex}`);
-  return;
-}
-// otherwise: existing post-sign-in navigation (library or onboarding)
+useEffect(() => {
+  if (session && inAuthGroup) {
+    if (pending) {
+      clear();
+      router.replace(`/expand/${pending.shareToken}/${pending.chapterIndex}`);
+    } else {
+      router.replace("/(tabs)");
+    }
+  } else if (!session && !inAuthGroup) {
+    router.replace("/(auth)/sign-in");
+  }
+}, [session, segments, pending]);
 ```
+
+NOTE: If a user signs in to a *different* account than the share targets, we still resume to `/expand/...` and the deep-link handler's truth table cell "current_user_id present, claim absent" clones into the current account. This is intentional per the spec — the user's choice of identity wins.
 
 - [ ] **Step 3: Typecheck**
 
@@ -3065,13 +3301,13 @@ cd "/Users/isuru/personal/AI Podcast App/mobile" && npx tsc --noEmit
 - [ ] **Step 4: Commit**
 
 ```bash
-cd "/Users/isuru/personal/AI Podcast App" && git add mobile/app/\(auth\)/sign-in.tsx && git commit -m "$(cat <<'EOF'
-feat(mobile): resume pending expansion after sign-in
+cd "/Users/isuru/personal/AI Podcast App" && git add mobile/app/_layout.tsx && git commit -m "$(cat <<'EOF'
+feat(mobile): root layout resumes pending expansion after sign-in
 
-When the auth screen successfully signs in a user who came from a
-share-link deep link (pending state stashed by useDeepLinkContext),
-route them straight to /expand/... instead of the default
-post-sign-in destination.
+When a user lands in the layout effect with a fresh session AND has
+pending share-expansion state from useDeepLinkContext, route to
+/expand/... instead of the default /(tabs). Lives in the root layout
+(not sign-in.tsx) so it doesn't race the layout's own auto-redirect.
 EOF
 )"
 ```
@@ -3085,45 +3321,38 @@ After this chunk: first-time cooking-view users get prompted for push permission
 ### Task 24: useProfile reads push_prompted_at
 
 **Files:**
-- Modify: `mobile/src/hooks/useProfile.ts`
+- Modify: `mobile/src/hooks/useProfile.tsx`
 - Modify: `mobile/src/types/database.ts`
 
-- [ ] **Step 1: Add field to the row + camelCase shape**
+- [ ] **Step 1: Read the existing ProfileProvider**
 
-In `useProfile.ts`, extend the row type and the camelCase shape:
-
-```ts
-type ProfileRow = {
-  // ... existing fields
-  push_prompted_at: string | null;
-};
-
-type Profile = {
-  // ... existing fields
-  pushPromptedAt: string | null;
-};
-
-function toProfile(row: ProfileRow): Profile {
-  return {
-    // ... existing
-    pushPromptedAt: row.push_prompted_at,
-  };
-}
+```bash
+sed -n '40,180p' "/Users/isuru/personal/AI Podcast App/mobile/src/hooks/useProfile.tsx"
 ```
 
-Add `push_prompted_at` to the `.from("profiles").select(...)` columns wherever rows pass through `toProfile`.
+The existing `ProfileContextType` is `{ id, displayName, preferredVoice, onboardingComplete, refresh }`. The Provider fetches from `.from("profiles").select(...)` and the result populates a `useMemo`'d context value.
 
-Add a mutation helper:
+- [ ] **Step 2: Extend the context type + add `markPushPrompted` action**
 
-```ts
-async function markPushPrompted(): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from("profiles").update({ push_prompted_at: new Date().toISOString() }).eq("id", user.id);
-  await refresh();
-}
-return { profile, markPushPrompted, ...rest };
-```
+In `useProfile.tsx`:
+
+- Add `pushPromptedAt: string | null` to `ProfileContextType`.
+- Add `markPushPrompted: () => Promise<void>` to `ProfileContextType`.
+- Inside `ProfileProvider`:
+  - Add `push_prompted_at` to the `.from("profiles").select(...)` column string.
+  - Map `push_prompted_at` → `pushPromptedAt` wherever the row → state transform happens.
+  - Add a `markPushPrompted` callback (declared inside the Provider so it closes over `refresh`):
+    ```ts
+    const markPushPrompted = useCallback(async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) return;
+      await supabase.from("profiles")
+        .update({ push_prompted_at: new Date().toISOString() })
+        .eq("id", auth.user.id);
+      await refresh();
+    }, [refresh]);
+    ```
+  - Add both `pushPromptedAt` (from state) and `markPushPrompted` to the `useMemo<ProfileContextType>` value object.
 
 - [ ] **Step 2: Update types/database.ts**
 
@@ -3138,7 +3367,7 @@ cd "/Users/isuru/personal/AI Podcast App/mobile" && npx tsc --noEmit
 - [ ] **Step 4: Commit**
 
 ```bash
-cd "/Users/isuru/personal/AI Podcast App" && git add mobile/src/hooks/useProfile.ts mobile/src/types/database.ts && git commit -m "$(cat <<'EOF'
+cd "/Users/isuru/personal/AI Podcast App" && git add mobile/src/hooks/useProfile.tsx mobile/src/types/database.ts && git commit -m "$(cat <<'EOF'
 feat(mobile): push_prompted_at on profiles + markPushPrompted helper
 EOF
 )"
@@ -3158,29 +3387,35 @@ EOF
  * first cooking view. Gated by profile.push_prompted_at — we set it
  * to now() on accept OR dismiss so it never re-appears.
  *
- * Uses the existing usePushNotifications hook for the actual permission
- * request. Brand colors match the share page.
+ * Calls expo-notifications directly because the existing
+ * usePushNotifications hook only runs Notifications.requestPermissionsAsync
+ * inside its own useEffect on sign-in — it doesn't expose a manual
+ * trigger. If the user grants permission here, the existing hook's
+ * sign-in-time effect will pick up the token next session.
  */
 import { useEffect, useState } from "react";
 import { Modal, View, Text, Pressable, StyleSheet } from "react-native";
+import * as Notifications from "expo-notifications";
 import { useProfile } from "../hooks/useProfile";
-import { usePushNotifications } from "../hooks/usePushNotifications";
 
 export function PushPermissionSheet({ visible }: { visible: boolean }) {
-  const { profile, markPushPrompted } = useProfile();
-  const { requestPermission } = usePushNotifications();
+  const { pushPromptedAt, markPushPrompted } = useProfile();
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (visible && profile && profile.pushPromptedAt === null) {
+    if (visible && pushPromptedAt === null) {
       setShow(true);
     }
-  }, [visible, profile?.pushPromptedAt]);
+  }, [visible, pushPromptedAt]);
 
   if (!show) return null;
 
   const onAllow = async () => {
-    await requestPermission();
+    try {
+      await Notifications.requestPermissionsAsync();
+    } catch (err) {
+      console.warn("push permission request failed:", err);
+    }
     await markPushPrompted();
     setShow(false);
   };
@@ -3191,7 +3426,7 @@ export function PushPermissionSheet({ visible }: { visible: boolean }) {
   };
 
   return (
-    <Modal visible transparent animationType="slide">
+    <Modal visible={show} transparent animationType="slide">
       <View style={styles.scrim}>
         <View style={styles.sheet}>
           <Text style={styles.eyebrow}>Ping me when it's ready</Text>
@@ -3252,16 +3487,20 @@ ls "/Users/isuru/personal/AI Podcast App/mobile/app/player/"
 
 - [ ] **Step 2: Mount the sheet, gated on cooking-state detection**
 
-Add a check: if any descendant of the parent podcast has `status='queued'` or `status='processing'`, we're on a cooking view. Mount `<PushPermissionSheet visible={anyDescendantCooking} />` near the top of the JSX.
-
-Pseudocode:
+The player uses `useChapterExpansions(parentPodcastId)` which returns a `Map<chapterTitle, { podcastId, status }>`. Derive cooking-state from the map values.
 
 ```tsx
+import { useMemo } from "react";
 import { PushPermissionSheet } from "../../../src/components/PushPermissionSheet";
 
+// ... existing imports + state
+
+const expansions = useChapterExpansions(id);
 const anyDescendantCooking = useMemo(
-  () => descendants.some((d) => d.status === "queued" || d.status === "processing"),
-  [descendants],
+  () => Array.from(expansions.values()).some(
+    (e) => e.status === "queued" || e.status === "processing",
+  ),
+  [expansions],
 );
 
 return (
