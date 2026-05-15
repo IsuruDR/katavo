@@ -15,6 +15,12 @@ export interface ShareEpisode {
   chapters: { timestampSeconds: number; title: string }[];
   audioUrl: string;
   coverUrl: string | null;
+  /**
+   * For descendants, the parent chapter this expansion was spawned from.
+   * Null on the root episode. Drives the genealogy display in the "More
+   * from this series" section.
+   */
+  sourceChapterTitle: string | null;
 }
 
 export interface ShareTemplateInput {
@@ -78,9 +84,9 @@ export function renderSharePage(input: ShareTemplateInput): string {
   const chapterItems = root.chapters
     .map(
       (ch) =>
-        `<li><button type="button" data-seek="${ch.timestampSeconds}"><span class="ts">${formatTimestamp(
+        `<li><button type="button" data-seek="${ch.timestampSeconds}" class="ch-seek"><span class="ts">${formatTimestamp(
           ch.timestampSeconds,
-        )}</span> ${htmlEscape(ch.title)}</button></li>`,
+        )}</span><span class="ch-title">${htmlEscape(ch.title)}</span></button><a href="#get-app" class="ch-expand">Expand in app ›</a></li>`,
     )
     .join("\n          ");
 
@@ -90,12 +96,20 @@ export function renderSharePage(input: ShareTemplateInput): string {
         <h2 class="eyebrow">More from this series</h2>
         <ul>
           ${descendants
-            .map(
-              (d) =>
-                `<li><button type="button" data-episode="${htmlEscape(d.id)}">${htmlEscape(
-                  d.topic,
-                )} <span class="meta">${formatMinutes(d.durationSeconds)}</span></button></li>`,
-            )
+            .map((d) => {
+              const dur = formatMinutes(d.durationSeconds);
+              const chapterAnchor = d.sourceChapterTitle
+                ? htmlEscape(d.sourceChapterTitle)
+                : htmlEscape(d.topic);
+              const lede = d.sourceChapterTitle
+                ? `A ${dur || "deep"} dive expanded from this chapter.`
+                : `A ${dur || "deep"} dive on this topic.`;
+              return `<li>
+              <h3 class="series-title">${chapterAnchor}</h3>
+              <p class="series-body">${lede}</p>
+              <button type="button" data-episode="${htmlEscape(d.id)}" class="series-listen">Listen ›</button>
+            </li>`;
+            })
             .join("\n          ")}
         </ul>
       </section>`
@@ -132,32 +146,36 @@ export function renderSharePage(input: ShareTemplateInput): string {
       header{padding:24px;border-bottom:1px solid var(--hair)}
       header .brand{font-weight:600;letter-spacing:0.3px}
       main{max-width:680px;margin:0 auto;padding:32px 24px 96px}
-      .cover{aspect-ratio:1;width:100%;max-width:320px;border-radius:12px;background:var(--hair);object-fit:cover;display:block;margin:0 0 24px}
       .hero-eyebrow{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 8px}
       .topic{font-family:Georgia,"IBM Plex Serif",serif;font-size:36px;line-height:1.12;margin:0 0 8px;letter-spacing:-0.4px}
       .meta-row{color:var(--ink-2);font-size:14px;margin:0 0 16px}
       .hero-rule{width:56px;height:1px;background:var(--accent);margin:0 0 32px}
       audio{width:100%;margin:0 0 32px}
-      .eyebrow{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 12px}
-      section.chapters ol,section.series ul{list-style:none;padding:0;margin:0;display:grid;gap:8px}
-      section.chapters button,section.series button{appearance:none;background:none;border:0;color:var(--ink);text-align:left;width:100%;padding:12px 0;border-bottom:1px solid var(--hair);font:inherit;cursor:pointer}
-      section.chapters .ts{display:inline-block;min-width:48px;color:var(--ink-2);font-variant-numeric:tabular-nums}
-      section.expand-cta{margin-top:40px;padding:32px 0;border-top:1px solid var(--hair);text-align:center}
-      section.expand-cta p{margin:0 0 16px;font-family:Georgia,"IBM Plex Serif",serif;font-size:17px;line-height:1.4;color:var(--ink)}
-      section.expand-cta .badges{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-      section.expand-cta img{height:40px}
-      section.series{margin-top:48px}
-      section.series .meta{color:var(--ink-2);font-size:13px}
+      .eyebrow{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 16px}
+      section.chapters ol{list-style:none;padding:0;margin:0;display:grid;gap:0}
+      section.chapters li{display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid var(--hair);padding:12px 0}
+      section.chapters li:last-child{border-bottom:0}
+      section.chapters .ch-seek{appearance:none;background:none;border:0;color:var(--ink);text-align:left;flex:1;padding:0;font:inherit;cursor:pointer;display:flex;align-items:flex-start;gap:0;min-width:0}
+      section.chapters .ts{display:inline-block;min-width:48px;color:var(--ink-2);font-variant-numeric:tabular-nums;flex-shrink:0}
+      section.chapters .ch-title{flex:1;min-width:0}
+      section.chapters .ch-expand{font-size:12px;color:var(--accent);text-decoration:none;font-weight:600;letter-spacing:0.2px;white-space:nowrap;padding-top:1px}
+      section.series{margin-top:56px;padding-top:32px;border-top:1px solid var(--hair)}
+      section.series ul{list-style:none;padding:0;margin:0;display:grid;gap:0}
+      section.series li{padding:20px 0;border-bottom:1px solid var(--hair)}
+      section.series li:last-child{border-bottom:0}
+      section.series .series-title{font-family:Georgia,"IBM Plex Serif",serif;font-size:20px;line-height:1.3;margin:0 0 6px;color:var(--ink);font-weight:600;letter-spacing:-0.2px}
+      section.series .series-body{font-size:14px;color:var(--ink-2);margin:0 0 12px;line-height:1.5}
+      section.series .series-listen{appearance:none;background:none;border:0;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;padding:0;font:inherit;letter-spacing:0.2px}
       footer{border-top:1px solid var(--hair);padding:32px 24px;text-align:center;color:var(--ink-2)}
-      footer p{margin:0 0 16px}
-      footer .badges{display:flex;gap:12px;justify-content:center}
-      footer img{height:40px}
+      footer p{margin:0 0 16px;font-family:Georgia,"IBM Plex Serif",serif;font-size:16px;color:var(--ink)}
+      footer .badges{display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:wrap}
+      footer .badges a{display:inline-flex;align-items:center;height:48px}
+      footer img{height:40px;width:auto;display:block}
     </style>
   </head>
   <body>
     <header><span class="brand">Katavo</span></header>
     <main>
-      ${root.coverUrl ? `<img class="cover" src="${htmlEscape(root.coverUrl)}" alt="${htmlEscape(root.topic)} cover" />` : ""}
       <p class="hero-eyebrow">Katavo</p>
       <h1 class="topic" id="topic">${htmlEscape(root.topic)}</h1>
       <p class="meta-row" id="meta-row">${formatMinutes(root.durationSeconds)} · ${root.chapters.length} chapters</p>
@@ -170,18 +188,10 @@ export function renderSharePage(input: ShareTemplateInput): string {
           ${chapterItems}
         </ol>
       </section>
-
-      <section class="expand-cta">
-        <p>Want to go deeper? Expand any chapter in the app.</p>
-        <div class="badges">
-          <a href="${STORE_APP}"><img src="/og/app-store.svg" alt="Download on the App Store" /></a>
-          <a href="${STORE_PLAY}"><img src="/og/play-store.png" alt="Get it on Google Play" /></a>
-        </div>
-      </section>
       ${seriesSection}
     </main>
-    <footer>
-      <p>Made with Katavo. Generate your own.</p>
+    <footer id="get-app">
+      <p>Make your own podcast with Katavo.</p>
       <div class="badges">
         <a href="${STORE_APP}"><img src="/og/app-store.svg" alt="Download on the App Store" /></a>
         <a href="${STORE_PLAY}"><img src="/og/play-store.png" alt="Get it on Google Play" /></a>
@@ -207,8 +217,9 @@ export function renderSharePage(input: ShareTemplateInput): string {
         function renderChapters(chapters) {
           list.innerHTML = chapters
             .map(function (ch) {
-              return '<li><button type="button" data-seek="' + ch.timestampSeconds + '"><span class="ts">' +
-                fmt(ch.timestampSeconds) + '</span> ' + escapeHtml(ch.title) + '</button></li>';
+              return '<li><button type="button" data-seek="' + ch.timestampSeconds + '" class="ch-seek"><span class="ts">' +
+                fmt(ch.timestampSeconds) + '</span><span class="ch-title">' + escapeHtml(ch.title) +
+                '</span></button><a href="#get-app" class="ch-expand">Expand in app ›</a></li>';
             })
             .join("");
         }

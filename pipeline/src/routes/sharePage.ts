@@ -58,6 +58,7 @@ route.get("/:token", async (c) => {
       chapters: Array.isArray(row.chapter_markers) ? row.chapter_markers : [],
       audioUrl: audioSigned.signedUrl,
       coverUrl,
+      sourceChapterTitle: row.source_chapter_title ?? null,
     };
   }
 
