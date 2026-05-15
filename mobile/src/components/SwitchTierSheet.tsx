@@ -85,9 +85,7 @@ export function SwitchTierSheet({
                 pressed && !loading && styles.ctaPressed,
               ]}
             >
-              <Text style={styles.ctaLabel}>
-                {loading ? "Working" : plan.ctaLabel}
-              </Text>
+              <Text style={styles.ctaLabel}>{plan.ctaLabel}</Text>
             </Pressable>
             <Pressable
               onPress={onDismiss}

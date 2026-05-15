@@ -230,8 +230,6 @@ export default function Plans() {
 
       </ScrollView>
 
-      {working && <LoadingOverlay message="Switching plan" />}
-
       <SwitchTierSheet
         visible={pendingPlan !== null && failure === null}
         plan={pendingPlan}

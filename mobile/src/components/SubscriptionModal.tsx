@@ -14,7 +14,6 @@
 import { useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LoadingOverlay } from "./LoadingOverlay";
 import { purchaseCredit } from "../services/revenucat";
 import { classifySwitchError } from "../lib/switchErrors";
 import type { SwitchFailure } from "../lib/switchErrors";
@@ -68,8 +67,7 @@ export function SubscriptionModal({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <Pressable style={styles.scrim} onPress={onClose} />
-        {loading && <LoadingOverlay message="Processing" />}
+        <Pressable style={styles.scrim} onPress={loading ? undefined : onClose} />
         <SafeAreaView
           style={styles.sheet}
           edges={["left", "right", "bottom"]}
@@ -94,12 +92,15 @@ export function SubscriptionModal({
           <View style={styles.footer}>
             <Pressable
               onPress={handleBuy}
-              style={({ pressed }) => [
-                styles.cta,
-                pressed && styles.ctaPressed,
-              ]}
+              disabled={loading}
               accessibilityRole="button"
               accessibilityLabel={`Buy one credit for ${price} dollars`}
+              accessibilityState={{ disabled: loading }}
+              style={({ pressed }) => [
+                styles.cta,
+                loading && styles.ctaDisabled,
+                pressed && !loading && styles.ctaPressed,
+              ]}
             >
               <Text style={styles.ctaLabel}>Buy for ${price}</Text>
             </Pressable>
@@ -197,6 +198,9 @@ const styles = StyleSheet.create({
     backgroundColor: color.accent,
     justifyContent: "center",
     alignItems: "center",
+  },
+  ctaDisabled: {
+    backgroundColor: color.hairlineStrong,
   },
   ctaPressed: {
     opacity: 0.85,
