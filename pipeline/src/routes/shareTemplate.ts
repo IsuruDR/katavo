@@ -133,13 +133,19 @@ export function renderSharePage(input: ShareTemplateInput): string {
       header .brand{font-weight:600;letter-spacing:0.3px}
       main{max-width:680px;margin:0 auto;padding:32px 24px 96px}
       .cover{aspect-ratio:1;width:100%;max-width:320px;border-radius:12px;background:var(--hair);object-fit:cover;display:block;margin:0 0 24px}
-      .topic{font-family:Georgia,"IBM Plex Serif",serif;font-size:32px;line-height:1.15;margin:0 0 8px}
-      .meta-row{color:var(--ink-2);font-size:14px;margin:0 0 24px}
+      .hero-eyebrow{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 8px}
+      .topic{font-family:Georgia,"IBM Plex Serif",serif;font-size:36px;line-height:1.12;margin:0 0 8px;letter-spacing:-0.4px}
+      .meta-row{color:var(--ink-2);font-size:14px;margin:0 0 16px}
+      .hero-rule{width:56px;height:1px;background:var(--accent);margin:0 0 32px}
       audio{width:100%;margin:0 0 32px}
       .eyebrow{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 12px}
       section.chapters ol,section.series ul{list-style:none;padding:0;margin:0;display:grid;gap:8px}
       section.chapters button,section.series button{appearance:none;background:none;border:0;color:var(--ink);text-align:left;width:100%;padding:12px 0;border-bottom:1px solid var(--hair);font:inherit;cursor:pointer}
       section.chapters .ts{display:inline-block;min-width:48px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+      section.expand-cta{margin-top:40px;padding:32px 0;border-top:1px solid var(--hair);text-align:center}
+      section.expand-cta p{margin:0 0 16px;font-family:Georgia,"IBM Plex Serif",serif;font-size:17px;line-height:1.4;color:var(--ink)}
+      section.expand-cta .badges{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+      section.expand-cta img{height:40px}
       section.series{margin-top:48px}
       section.series .meta{color:var(--ink-2);font-size:13px}
       footer{border-top:1px solid var(--hair);padding:32px 24px;text-align:center;color:var(--ink-2)}
@@ -152,8 +158,10 @@ export function renderSharePage(input: ShareTemplateInput): string {
     <header><span class="brand">Katavo</span></header>
     <main>
       ${root.coverUrl ? `<img class="cover" src="${htmlEscape(root.coverUrl)}" alt="${htmlEscape(root.topic)} cover" />` : ""}
+      <p class="hero-eyebrow">Katavo</p>
       <h1 class="topic" id="topic">${htmlEscape(root.topic)}</h1>
       <p class="meta-row" id="meta-row">${formatMinutes(root.durationSeconds)} · ${root.chapters.length} chapters</p>
+      <div class="hero-rule" aria-hidden="true"></div>
       <audio id="player" controls preload="metadata" src="${htmlEscape(root.audioUrl)}"></audio>
 
       <section class="chapters">
@@ -161,6 +169,14 @@ export function renderSharePage(input: ShareTemplateInput): string {
         <ol id="chapter-list">
           ${chapterItems}
         </ol>
+      </section>
+
+      <section class="expand-cta">
+        <p>Want to go deeper? Expand any chapter in the app.</p>
+        <div class="badges">
+          <a href="${STORE_APP}"><img src="/og/app-store.svg" alt="Download on the App Store" /></a>
+          <a href="${STORE_PLAY}"><img src="/og/play-store.svg" alt="Get it on Google Play" /></a>
+        </div>
       </section>
       ${seriesSection}
     </main>
