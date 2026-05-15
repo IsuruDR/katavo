@@ -58,6 +58,24 @@ route.post("/", webhookAuth, async (c) => {
 
     const userId = app_user_id;
 
+    // SEC-12: verify the app_user_id resolves to a real profile. RevenueCat
+    // is the source of truth for billing, but if the webhook secret ever
+    // leaks an attacker could send any app_user_id and have it accepted.
+    // We don't reject unknown users (a missing profile could be a legitimate
+    // race during signup), but we log loudly so an unexpected pattern of
+    // unknown user_ids surfaces in the logs as a signal.
+    const { data: profileExists } = await serviceClient
+      .from("profiles")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (!profileExists) {
+      console.warn(
+        `webhook: app_user_id=${userId} not found in profiles for event ${eventId ?? "(no-id)"}, type=${type}. ` +
+          `Could be a signup race; sustained pattern is a possible secret-leak signal.`,
+      );
+    }
+
     switch (type) {
       case "INITIAL_PURCHASE":
       case "RENEWAL": {

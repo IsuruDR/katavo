@@ -26,16 +26,25 @@ Notifications.setNotificationHandler({
  * includes a play=true hint, so landing on the player loads-and-pauses
  * per the existing PlayingPodcastContext.load semantics. User taps play
  * manually after the screen mounts.
+ *
+ * SEC-10: deepLink is allowlisted to /player/<uuid>[?expand=<int>] only.
+ * Today only the server sends notifications, but the contract trusts
+ * whatever the payload carries. If a future partner-or-marketing push
+ * pathway lands without re-auditing this resolver, an attacker-controlled
+ * deepLink ("/payment/setup?return=https://phish.example") would let
+ * router.push send users anywhere. Hard regex gate prevents that.
  */
+const PLAYER_PATH = /^\/player\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\?expand=\d+)?$/i;
+
 function routeFromNotificationData(
   data: Record<string, unknown> | null | undefined,
 ): string | null {
   if (!data) return null;
-  if (typeof data.deepLink === "string" && data.deepLink.length > 0) {
+  if (typeof data.deepLink === "string" && PLAYER_PATH.test(data.deepLink)) {
     return data.deepLink;
   }
   const id = data.podcast_id ?? data.podcastId;
-  if (typeof id === "string" && id.length > 0) {
+  if (typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return `/player/${id}`;
   }
   return null;

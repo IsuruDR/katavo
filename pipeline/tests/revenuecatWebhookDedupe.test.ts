@@ -44,6 +44,9 @@ function buildSupabase(opts: MockOpts = {}) {
     select: vi.fn(() => passthroughChain),
     eq: vi.fn(() => passthroughChain),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    maybeSingle: vi
+      .fn()
+      .mockResolvedValue({ data: { id: "user-1" }, error: null }),
   };
 
   let fromCalls = 0;
