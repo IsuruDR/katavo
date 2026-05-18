@@ -1,3 +1,9 @@
 voice-test/
 .env
 .env.local
+
+# LangGraph API
+.langgraph_api
+
+# Golden research run outputs (generated, not committed)
+tests/golden/research/last-run-*.json

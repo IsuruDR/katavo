@@ -1,0 +1,31 @@
+{
+  "id": "depth-fermi-zoo",
+  "input": {
+    "topic": "the Fermi paradox and why we haven't heard from aliens",
+    "tier": "pro",
+    "clarifyingAnswers": [],
+    "parentPodcastId": "golden-parent-fermi",
+    "sourceChapterTitle": "The zoo hypothesis",
+    "parentResearchDocument": {
+      "sections": [
+        {
+          "title": "The math",
+          "content": "Drake's equation suggests millions of civilizations; we observe none. The great silence."
+        },
+        {
+          "title": "The zoo hypothesis",
+          "content": "Maybe they're watching. Ball proposed in 1973 that advanced civilizations deliberately avoid contact."
+        },
+        {
+          "title": "The great filter",
+          "content": "Some step in the path from single cells to interstellar travel is wildly improbable."
+        }
+      ]
+    }
+  },
+  "expected": {
+    "minSectionCount": 4,
+    "minSourceCount": 5,
+    "minFetchedRatio": 0.4
+  }
+}

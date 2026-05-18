@@ -1,0 +1,13 @@
+{
+  "id": "breadth-fermi-paradox",
+  "input": {
+    "topic": "the Fermi paradox and why we haven't heard from aliens",
+    "tier": "pro",
+    "clarifyingAnswers": []
+  },
+  "expected": {
+    "minSectionCount": 6,
+    "minSourceCount": 8,
+    "minFetchedRatio": 0.4
+  }
+}

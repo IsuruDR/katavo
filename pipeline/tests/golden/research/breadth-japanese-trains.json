@@ -1,0 +1,13 @@
+{
+  "id": "breadth-japanese-trains",
+  "input": {
+    "topic": "how Japanese trains run so on time",
+    "tier": "plus",
+    "clarifyingAnswers": []
+  },
+  "expected": {
+    "minSectionCount": 5,
+    "minSourceCount": 6,
+    "minFetchedRatio": 0.4
+  }
+}
