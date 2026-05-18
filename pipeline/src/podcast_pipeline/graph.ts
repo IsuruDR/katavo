@@ -9,7 +9,7 @@ import { StateGraph, END } from "@langchain/langgraph";
 import { PipelineState, makeInitialState } from "./state.js";
 import type { PipelineStateType } from "./state.js";
 import { briefBuilder } from "./nodes/briefBuilder.js";
-import { deepResearchAgent } from "./nodes/deepResearchAgent.js";
+import { researchEntry } from "./nodes/research/entry.js";
 import { qualityGate } from "./nodes/qualityGate.js";
 import { scriptWriter } from "./nodes/scriptWriter.js";
 import { adInjector } from "./nodes/adInjector.js";
@@ -56,7 +56,7 @@ export function routeAfterScript(state: PipelineStateType): string {
 
 const workflow = new StateGraph(PipelineState)
   .addNode("briefBuilder", briefBuilder)
-  .addNode("deepResearchAgent", deepResearchAgent)
+  .addNode("deepResearchAgent", researchEntry)
   .addNode("qualityGate", qualityGate)
   .addNode("scriptWriter", scriptWriter)
   .addNode("adInjector", adInjector)

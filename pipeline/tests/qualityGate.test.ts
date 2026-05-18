@@ -116,4 +116,17 @@ describe("qualityGate", () => {
     expect(result.status).toBe("scripting");
     expect(result.shouldRetry).toBe(false);
   });
+
+  it("passes through when v22 pipeline already set scripting status", () => {
+    const result = qualityGate({
+      status: "scripting",
+      credibilityScore: null,
+      researchIterations: 0,
+      shouldRetry: false,
+      needsDisclaimer: false,
+      sources: [{ url: "https://a.com", title: "A" }],
+      researchDocument: { sections: [{ title: "S", content: "x" }] },
+    } as any);
+    expect(result).toEqual({});
+  });
 });
