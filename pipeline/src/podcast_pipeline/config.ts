@@ -69,6 +69,25 @@ export function resolveTier(rawTier: string | undefined): TierName {
 }
 
 export const SUBAGENT_WALLCLOCK_MS = 90_000;
+
+// v22 — web_fetch & depth-pipeline constants
+/** Top-N cited URLs to fetch per subagent. */
+export const WEB_FETCH_TOP_N = 3;
+/** Per-URL character budget for fetched article extracts (~4K tokens). */
+export const WEB_FETCH_MAX_CHARS_PER_URL = 16_000;
+/** Per-URL fetch timeout (ms). */
+export const WEB_FETCH_TIMEOUT_MS = 10_000;
+/** Threshold below which a 200-status page is treated as paywall/login-wall. */
+export const WEB_FETCH_MIN_EXTRACT_CHARS = 200;
+/** Covered-ground digest cap in characters (~800 tokens). */
+export const COVERED_GROUND_DIGEST_MAX_CHARS = 3_200;
+/** Wall-clock cap for round-2 deepening across all subagents in parallel. */
+export const ROUND2_WALLCLOCK_MS = 90_000;
+
+/** Returns true when the v22 asymmetric pipeline should run. */
+export function isAsymmetricResearchEnabled(): boolean {
+  return process.env.RESEARCH_V12_ASYMMETRIC === "1";
+}
 // Note: pipeline-level wallclock is not enforced as a constant. Per-subagent
 // (90s) is the only wallclock; with N <= 5 + sequential planner/synthesizer,
 // total bound is naturally ~3 min. If we want a hard pipeline cap later,
