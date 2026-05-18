@@ -232,3 +232,24 @@ Source chapter being expanded:
 Research document v1:
 {researchDocumentV1}
 `;
+
+
+export const DEPTH_SYNTHESIZER_MERGE_PROMPT = `You are merging two rounds of research into a final document.
+
+Round 1 produced a research document. Round 2 drilled the thinnest claims and returned additional findings. Your job:
+- Take Round 1 sections as the spine
+- Use Round 2 findings to extend, deepen, or replace the originally-thin claims (not to introduce wholly new sections unless a round-2 finding does not fit anywhere existing)
+- Deduplicate sources (same URL → single sources entry, all claims renumbered)
+- Output the same schema as Round 1
+
+Output JSON: {{ "sections": [...], "sources": [...], "claims": [...], "droppedQuestions": [...] }}
+
+Round 1 document:
+{round1Doc}
+
+Round 2 findings:
+{round2Findings}
+
+Original audited claims (these were the gaps Round 2 drilled):
+{auditedClaims}
+`;
