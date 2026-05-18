@@ -9,7 +9,7 @@ function getClient(): PostHog | null {
   const apiKey = process.env.POSTHOG_API_KEY;
   if (!apiKey) return null;
   client = new PostHog(apiKey, {
-    host: process.env.POSTHOG_HOST ?? "https://us.i.posthog.com",
+    host: process.env.POSTHOG_HOST ?? "https://eu.i.posthog.com",
     flushAt: 20,
     flushInterval: 10_000,
   });
