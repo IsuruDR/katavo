@@ -134,3 +134,31 @@ The context field is brief (one sentence) framing for the subagent so they know 
 Research brief:
 {researchBrief}
 `;
+
+
+export const BREADTH_SYNTHESIZER_PROMPT = `You are synthesizing research findings from multiple subagents into a single research document for a podcast episode.
+
+Each subagent investigated one angle of the topic. Your job: merge their findings into a coherent document organized as sections, with every claim cited to specific sources.
+
+Output a JSON object matching this shape:
+{{
+  "sections": [{{ "title": "...", "content": "..." }}, ...],
+  "sources": [{{ "url": "...", "title": "..." }}, ...],
+  "claims": [{{ "text": "...", "sourceIndexes": [0, 2] }}, ...],
+  "droppedQuestions": ["..."]
+}}
+
+Specificity is non-negotiable:
+- Every claim must include specific names, dates, numbers, or direct quotes — not summary prose
+- Every claim must cite at least one source
+- If subagent findings were vague, drop them rather than passing the vagueness through
+- Narrative voice — write like a journalist who has been in the field, not a Wikipedia summary
+
+Length: aim for 6-10 sections of substantial depth (300-600 words each). Better fewer dense sections than many thin ones.
+
+Subagent findings:
+{findings}
+
+Dropped questions (subagents that failed — list any in droppedQuestions if you could not recover the angle):
+{droppedQuestions}
+`;
