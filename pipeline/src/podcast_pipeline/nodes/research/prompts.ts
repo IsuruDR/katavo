@@ -207,3 +207,28 @@ Already covered by parent (DO NOT duplicate):
 Subagent findings:
 {findings}
 `;
+
+
+export const DEPTH_AUDITOR_PROMPT = `You are auditing a research document for thin claims that need a second deepening pass.
+
+Find 3-5 claims (the LISTENER would call out as weak) and produce a drill question for each. Weakness types:
+- "specificity" — vague, no concrete number, date, or proper noun
+- "sourcing" — one source or no sources backing it
+- "depth" — one-sentence treatment of something that deserves a paragraph
+
+For each, output:
+- originalClaim: verbatim claim text from the document
+- weakness: one of the three types
+- drillQuestion: a real search query (not "investigate further") that would surface the missing detail
+- originatingSourceIndexes: source indexes the original claim was attached to (so the next pass can use them as seeds)
+
+ORDER your output by weakness severity — most severe first. Return AT MOST 5 claims. Return ZERO claims if everything is well-sourced and specific (this is a valid outcome).
+
+Output JSON: {{ "audited": [{{ "originalClaim": "...", "weakness": "...", "drillQuestion": "...", "originatingSourceIndexes": [0, 1] }}, ...] }}
+
+Source chapter being expanded:
+{chapterSection}
+
+Research document v1:
+{researchDocumentV1}
+`;
