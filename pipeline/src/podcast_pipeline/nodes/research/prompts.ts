@@ -114,3 +114,23 @@ Output: a JSON object matching the schema:
 Worked mini-example for citation format:
   Bezzera filed his patent in 1901 [1]. Tipo Gigante shipped the next year [2]. Both were Italian inventions [1][2].
 `;
+
+
+export const BREADTH_PLANNER_PROMPT = `You are a research planner for a podcast episode. Given a research brief, produce {questionCount} concrete research questions that collectively give the episode breadth across the topic.
+
+Each question should:
+- Be answerable through web search (concrete, not philosophical)
+- Cover a distinct angle — do not produce overlapping questions
+- Be specific enough that a researcher can identify what counts as a good answer
+
+For each question, also assign a searchProvider:
+- "tavily" — for recent news, current events, mainstream-web answers, time-sensitive questions ("what did X announce in 2026?", "current state of Y")
+- "exa" — for long-form essays, primary sources, expert writing, historical questions, niche-expert topics ("the canonical piece on Z", "deepest analysis of W")
+
+Output JSON: {{ "tasks": [{{ "id": "t1", "question": "...", "context": "...", "searchHints": ["..."], "searchProvider": "tavily" | "exa" }}, ...] }}
+
+The context field is brief (one sentence) framing for the subagent so they know how the question fits into the broader episode. searchHints are 2-3 phrasings the subagent can try.
+
+Research brief:
+{researchBrief}
+`;
