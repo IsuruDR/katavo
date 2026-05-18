@@ -5,10 +5,8 @@
  * Phase 1 — input: editorial title prompt and a bottom-hairline topic field.
  * Phase 2 — clarifying: all questions visible at once via ClarifyingForm.
  *
- * Loading states stay inline — the topic input + Generate CTA dim during
- * the question-generation request; ClarifyingForm's own CTA dims during
- * the submit round-trip. No full-screen LoadingOverlay takeovers.
- * Errors show inline at the top of the input phase rather than as
+ * Loading and submitting both render the typographic LoadingOverlay; no
+ * spinners. Errors show inline at the top of the input phase rather than as
  * disruptive alerts.
  */
 import { useState } from "react";
@@ -29,6 +27,7 @@ import { useSubscription } from "../../src/hooks/useSubscription";
 import { useProfile } from "../../src/hooks/useProfile";
 import { CreditChip } from "../../src/components/CreditChip";
 import { ClarifyingForm } from "../../src/components/ClarifyingForm";
+import { LoadingOverlay } from "../../src/components/LoadingOverlay";
 import { ResearchingSheet } from "../../src/components/ResearchingSheet";
 import {
   generateQuestions,
@@ -149,7 +148,14 @@ export default function Generate() {
     setPhase("input");
   };
 
-  if (phase === "clarifying" || phase === "submitting") {
+  if (phase === "loading-questions") {
+    return <LoadingOverlay message="Reading your topic" />;
+  }
+  if (phase === "submitting") {
+    return <LoadingOverlay message="Sending your topic to research" />;
+  }
+
+  if (phase === "clarifying") {
     return (
       <ClarifyingForm
         questions={questions}
@@ -157,17 +163,13 @@ export default function Generate() {
         bonusCredits={bonusCredits}
         onSubmit={handleClarifyingSubmit}
         onBack={handleClarifyingBack}
-        submitting={phase === "submitting"}
       />
     );
   }
 
-  // Phases: input + loading-questions. Same UI; loading-questions disables
-  // the topic input + CTA in place while the request is in flight. No
-  // full-screen takeover.
-  const isReadingTopic = phase === "loading-questions";
+  // Phase: input
   const submitLabel = hasCredits ? "Generate" : "Out of credits. Buy more.";
-  const canTap = !isReadingTopic && (hasCredits ? topic.trim().length > 0 : true);
+  const canTap = hasCredits ? topic.trim().length > 0 : true;
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
@@ -214,7 +216,6 @@ export default function Generate() {
             placeholderTextColor={color.inkTertiary}
             multiline
             autoCorrect
-            editable={!isReadingTopic}
             accessibilityLabel="Topic to research"
           />
         </View>

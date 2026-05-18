@@ -19,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Link } from "expo-router";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useAuth } from "../../src/hooks/useAuth";
+import { LoadingOverlay } from "../../src/components/LoadingOverlay";
 import { GoogleButton } from "../../src/components/GoogleButton";
 import { isCancellationError } from "../../src/lib/auth-providers";
 import { color, font, layout, space, text } from "../../src/theme/tokens";
@@ -78,6 +79,8 @@ export default function SignIn() {
     }
   };
 
+  if (loading) return <LoadingOverlay message="Signing in" />;
+
   return (
     <SafeAreaView
       style={styles.root}
@@ -101,13 +104,13 @@ export default function SignIn() {
               cornerRadius={28}
               style={[
                 styles.appleButton,
-                (submitting !== null || loading) && { opacity: 0.5 },
+                submitting !== null && { opacity: 0.5 },
               ]}
               onPress={handleApple}
             />
             <GoogleButton
               onPress={handleGoogle}
-              disabled={submitting !== null || loading}
+              disabled={submitting !== null}
             />
           </View>
 
