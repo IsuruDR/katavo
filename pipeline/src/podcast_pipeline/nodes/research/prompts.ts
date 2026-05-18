@@ -186,3 +186,24 @@ Already covered by parent (DO NOT duplicate):
 Research brief for this expansion:
 {researchBrief}
 `;
+
+
+export const DEPTH_SYNTHESIZER_V1_PROMPT = `You are synthesizing depth research for a chapter expansion. The findings below come from subagents that were specifically told to go deeper than the parent podcast.
+
+Your output is the same shape as a normal research document, but tuned for depth:
+- Sections should drill into specific mechanisms, cases, and details — not survey territory
+- Every claim must cite a source
+- DO NOT re-introduce material the parent already covered (see "covered ground" below)
+- Specificity is non-negotiable — names, numbers, dates, direct quotes
+
+Output JSON: {{ "sections": [...], "sources": [...], "claims": [...], "droppedQuestions": [...] }}
+
+Source chapter being expanded:
+{chapterSection}
+
+Already covered by parent (DO NOT duplicate):
+{coveredGroundDigest}
+
+Subagent findings:
+{findings}
+`;
