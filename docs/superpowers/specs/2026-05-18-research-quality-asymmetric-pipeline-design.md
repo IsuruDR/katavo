@@ -10,9 +10,17 @@ Parent episodes need breadth — distinct angles, wide coverage, the survey shap
 
 Today's pipeline treats them the same and adds `expansion` mode flags inside shared nodes. The flag approach makes both modes mediocre. Splitting into two subgraphs that share only utility helpers (search clients, web_fetch, parent-context builders) means we can tune breadth and depth independently and the trace is readable.
 
+## Relationship to existing qualityGate
+
+Today's `qualityGate` node (`pipeline/src/podcast_pipeline/nodes/qualityGate.ts`) is a credibility-score retry loop — it runs after `deepResearchAgent`, and if `credibilityScore < 0.7` it loops back for up to 2 retries before forcing `needsDisclaimer`. That loop is a band-aid for thin research; the new design solves thinness structurally (asymmetric pipelines, web_fetch, iterative deepening on expansions).
+
+**Remove `qualityGate` entirely.** Both subgraphs route directly from synthesizer (breadth) or merge (depth) to `scriptWriter`. State fields driving the old loop disappear: `credibilityScore`, `credibilityReport`, `researchIterations`, `shouldRetry`, `needsDisclaimer`.
+
+The one job qualityGate did that still needs a home is the empty-research check (`hasNoResearchMaterial`). That moves into a small helper called at the end of each pipeline: if `sources.length === 0 && sections.length === 0`, set `status: "failed"` with the same error message and let the existing failure handler refund the credit. No disclaimer state needed — script writer no longer cares about disclaimer flags.
+
 ## Architecture
 
-Two subgraphs branch at `briefBuilder` based on whether `parentPodcastId` is set.
+Two subgraphs branch via a conditional edge **after** `briefBuilder` based on whether `parentPodcastId` is set. `briefBuilder` itself stays a single node — it already handles the expansion-prompt swap. The split happens at the outgoing edge.
 
 ```mermaid
 flowchart TD
@@ -20,7 +28,7 @@ flowchart TD
     Start -->|parentPodcastId set| Depth
 
     subgraph Breadth[Breadth Pipeline - Parent Episodes]
-        BP[Planner: 6-8 questions<br/>+ provider routing per task]
+        BP[Planner: N questions per tier<br/>see Tier mapping<br/>+ provider routing per task]
         BS[Subagents: Tavily-heavy<br/>+ web_fetch on cited URLs]
         BY[Synthesizer: single pass<br/>specificity-enforced]
         BP --> BS --> BY
@@ -57,14 +65,14 @@ Parent episodes lean Tavily for the cheap broad questions; a couple of Exa subag
 pipeline/src/podcast_pipeline/
 ├── nodes/research/
 │   ├── breadth/
-│   │   ├── planner.ts          [NEW] 6-8 questions, provider-tagged per task
-│   │   └── synthesizer.ts      [NEW] single-pass, specificity-enforced
+│   │   ├── planner.ts          [NEW] tier-scaled question count, provider-tagged
+│   │   └── synthesizer.ts      [NEW] single-pass, specificity-enforced; sets status="scripting"
 │   ├── depth/
-│   │   ├── planner.ts          [NEW] 3-5 questions, covered-ground aware
+│   │   ├── planner.ts          [NEW] tier-scaled, covered-ground aware
 │   │   ├── synthesizerV1.ts    [NEW] round 1 synthesis
 │   │   ├── auditor.ts          [NEW] pure-LLM claim scoring + drill questions
 │   │   ├── qualityGate.ts      [NEW] pure fn, decides if round 2 fires
-│   │   └── synthesizerMerge.ts [NEW] merges v1 + round 2 findings
+│   │   └── synthesizerMerge.ts [NEW] merges v1 + round 2; exports buildRound2Tasks(); sets status="scripting"
 │   ├── subagent.ts             [REFACTORED] provider-agnostic, web_fetch-enabled
 │   └── prompts.ts              [REWRITTEN] specificity + narrative voice
 ├── tools/
@@ -83,32 +91,33 @@ Auditor and quality gate stay separate. Auditor is the LLM-powered "find the gap
 
 ## Data flow
 
-LangGraph state shape — additions over today's state:
+LangGraph state shape changes:
+
+**Removed** (with `qualityGate`): `credibilityScore`, `credibilityReport`, `researchIterations`, `shouldRetry`, `needsDisclaimer`.
+
+**Kept** (still set at enqueue time by `submitPodcast` / `recoverStuckJobs`, consumed by `briefBuilder`): `parentPodcastId`, `sourceChapterTitle`, `parentResearchDigest`, `parentResearchDocument`, `parentChapterTranscript`. The digest stays as `briefBuilder` input; `parentResearchDocument` is the input to the new `parentContext` derivation.
+
+**Added** (intermediate state inside the research subgraphs):
 
 ```ts
-type State = {
-  // existing
-  podcastId, tier, brief,
-  parentPodcastId?, sourceChapterTitle?, parentChapterTranscript?, parentResearchDoc?,
-
+type StateAdditions = {
   // breadth pipeline
   subagentTasks?: SubagentTask[],
   findings?: SubagentFinding[],
 
   // depth pipeline
   chapterSection?: string,           // sliced parent section, not full doc
-  coveredGroundDigest?: string,      // bullet list of parent claims
+  coveredGroundDigest?: string,      // bullet list of parent claims (tighter than parentResearchDigest)
   subagentTasksR1?: SubagentTask[],
   findingsR1?: SubagentFinding[],
   researchDocumentV1?: ResearchDocument,
   auditFindings?: AuditedClaim[],
   subagentTasksR2?: SubagentTask[],
   findingsR2?: SubagentFinding[],
-
-  // shared output
-  researchDocument?: ResearchDocument,
 }
 ```
+
+Final output (`researchDocument`, `sources`) is unchanged from today's schema.
 
 Depth pipeline sequence — breadth is a strict subset (skip parentContext and everything from auditor onward):
 
@@ -144,7 +153,7 @@ sequenceDiagram
     end
 ```
 
-Round 2 subagents are dispatched from the auditor's drill questions, not re-planned from scratch. The auditor already knows what's thin and why; planner involvement would just add a hop. Source renumbering happens in `synthesizerMerge` — round 1 and round 2 produce overlapping source sets and the final doc needs a single unified citation index. Auditor passes round 1 sources to round 2 subagents as `seedUrls` so primary sources stay consistent if they show up again.
+Round 2 subagents are dispatched from the auditor's drill questions, not re-planned from scratch. The auditor already knows what's thin and why; planner involvement would just add a hop. Source renumbering happens in `synthesizerMerge` — round 1 and round 2 produce overlapping source sets and the final doc needs a single unified citation index. Round 1 sources flow into round 2 via `originatingSourceIndexes` on each `AuditedClaim`, which `buildRound2Tasks` resolves into `seedUrls` so primary sources stay consistent if they show up again.
 
 ## Parent context fix
 
@@ -152,8 +161,16 @@ Today, expansion mode `JSON.stringify`s the full parent `research_document` and 
 
 Replace with two narrower inputs built by `buildChapterSection()` and `buildCoveredGroundDigest()`:
 
-- `chapterSection`: the parent doc's section that corresponds to the source chapter, sliced from the parent's `sections[]` by title match. Full content, no truncation. This is what the new research is *expanding from*.
-- `coveredGroundDigest`: a bullet list of one-sentence claim summaries from the rest of the parent doc, capped at ~800 tokens. This is what the new research should *not duplicate*.
+- `chapterSection`: the parent doc's section that corresponds to the source chapter. Full content, no truncation. This is what the new research is *expanding from*.
+- `coveredGroundDigest`: a bullet list of one-sentence claim summaries from the rest of the parent doc (all sections except the source one), capped at ~800 tokens. This is what the new research should *not duplicate*. If the parent has many sections and the digest exceeds the cap, drop sections by descending position (later sections first) until under budget. Section titles are kept short — title + first sentence per section, no further trimming.
+
+**Section matching is approximate.** `chapter_markers[].title` and `research_document.sections[].title` come from different generation paths and aren't 1:1. `findRelevantSection(chapterTitle, sections)` resolves in this order:
+
+1. Case-insensitive substring match (either direction)
+2. Keyword-overlap score on token sets, pick highest score above a 0.3 threshold
+3. Fall back to the first section, and log a `parent_context.section_match_fallback` event
+
+The covered-ground digest is built from all sections *except* the matched one. If we fell back to "first section", the digest still excludes that fallback to avoid duplication.
 
 Synthesizer prompt receives both with clear separation. Frees ~2–3K tokens of synthesizer budget for new findings.
 
@@ -165,12 +182,17 @@ Subagent today is Tavily-hardcoded and synthesizes from snippets only. New shape
 type SubagentTask = {
   question: string;
   searchProvider: 'tavily' | 'exa';
-  seedUrls?: string[];          // from auditor (round 2) or parent doc (round 1)
+  seedUrls?: string[];          // optional; see below
   maxSearches: number;
   maxReflections: number;
   fetchCitedUrls: boolean;      // top-3, 4K tokens per URL cap
 };
 ```
+
+**`seedUrls` provenance**:
+- Breadth: always undefined.
+- Depth round 1: optional. The depth planner may extract 1–2 high-citation URLs from `chapterSection` and seed them on Exa subagents to drive `findSimilar`. If the parent has no usable URLs, undefined.
+- Depth round 2: set by the round-2 task builder (see Auditor section), seeded from the round 1 source that supported the weak claim being drilled.
 
 Per iteration: dispatch search via the provider, accumulate cited claims, pick top-3 URLs by citation strength, run `webFetch` against each, then reflect. The reflection step sees both snippet results and full-article extracts; final cited sources carry the right `kind` discriminator.
 
@@ -182,22 +204,40 @@ Pure LLM (Sonnet 4.6). Takes `researchDocumentV1` plus the source chapter contex
 
 ```ts
 type AuditedClaim = {
-  originalClaim: string;         // verbatim from v1
+  originalClaim: string;          // verbatim from v1
   weakness: 'specificity' | 'sourcing' | 'depth';
-  drillQuestion: string;         // becomes a round 2 SubagentTask
+  drillQuestion: string;          // a real search query, not a gap description
+  originatingSourceIndexes: number[]; // indexes into researchDocumentV1.sources
 };
 ```
 
-Prompt directs it to find 3–5 claims that are vague (no specific number/date/name), undersourced (one source or none), or shallow (one-sentence treatment of something the chapter is asking us to drill). It outputs the drill questions as actual search queries, not abstract gap descriptions.
+Prompt directs it to find 3–5 claims that are vague (no specific number/date/name), undersourced (one source or none), or shallow (one-sentence treatment of something the chapter is asking us to drill). Drill questions are framed as search queries, not abstract gap descriptions.
 
-No heuristic prefilter. Pure LLM is simpler code, fewer test edges, and Sonnet handles this well in single-pass.
+No heuristic prefilter. Pure LLM is simpler code, fewer test edges, and Sonnet handles this well in single pass.
+
+**Round 2 task construction**: `buildRound2Tasks(audited: AuditedClaim[], state)` is a pure helper exported from `synthesizerMerge.ts`, called by the graph edge from `qualityGate` to round 2 subagents (not its own LangGraph node — keeps the graph shallow). It converts each audited claim to a `SubagentTask`:
+
+```ts
+{
+  question: audited.drillQuestion,
+  searchProvider: 'exa',          // depth is Exa-heavy by default
+  seedUrls: audited.originatingSourceIndexes
+    .map(i => researchDocumentV1.sources[i]?.url)
+    .filter(Boolean),
+  maxSearches: TIER_CONFIG[state.tier].searchBudget.maxSearches,
+  maxReflections: TIER_CONFIG[state.tier].searchBudget.maxReflections,
+  fetchCitedUrls: true,
+}
+```
+
+Capped at `TIER_CONFIG[state.tier].maxR2Subagents` — if the auditor returns more than the cap, take the first N (auditor is prompted to return them ordered by weakness severity).
 
 ## Quality gate
 
-Pure function. Takes `tier` and `auditFindings.length`. Returns `{ fire: boolean, maxR2Subagents: number }`. Table:
+Pure function. Takes `tier` and `auditFindings.length`. Returns `{ fire: boolean }`. The R2 cap is a tier-static config value (`TIER_CONFIG[tier].maxR2Subagents`) — `buildRound2Tasks` reads it directly, the gate doesn't return it.
 
-| Tier | Fire threshold | Max R2 subagents |
-|------|----------------|------------------|
+| Tier | Fire threshold | Max R2 subagents (static cap) |
+|------|----------------|------------------------------|
 | Free | ≥3 findings | 3 |
 | Plus | ≥2 findings | 4 |
 | Pro  | ≥1 finding  | 5 |
@@ -206,11 +246,19 @@ Tier policy: free gets every feature, tighter budgets. No tier ever gates out a 
 
 ## Tier mapping
 
-Same models and prompts everywhere. What changes:
+Same models and prompts everywhere. Single source of truth — a `TIER_CONFIG` object in `config.ts` that the planners, gate, and `buildRound2Tasks` all read from:
 
-- **Breadth question count**: Free 5, Plus 6, Pro 8
-- **Search budget per subagent**: Free 2 searches / 1 reflection, Plus 3 / 2, Pro 5 / 2
-- **Round 2 fire threshold and cap**: see quality gate table
+```ts
+TIER_CONFIG = {
+  free: { breadthQuestions: 5, searchBudget: { maxSearches: 2, maxReflections: 1 }, gateFireThreshold: 3, maxR2Subagents: 3 },
+  plus: { breadthQuestions: 6, searchBudget: { maxSearches: 3, maxReflections: 2 }, gateFireThreshold: 2, maxR2Subagents: 4 },
+  pro:  { breadthQuestions: 8, searchBudget: { maxSearches: 5, maxReflections: 2 }, gateFireThreshold: 1, maxR2Subagents: 5 },
+}
+```
+
+Search budgets match today's `RESEARCH_BUDGETS` in `config.ts:28-32` so we don't regress on existing runs. Subagent wallclock per subagent stays at 90s — reuses existing `SUBAGENT_WALLCLOCK_MS` constant.
+
+`hasUsedExpand` state field (Plus-tier expand-once gating) is unrelated to this work and stays as-is.
 
 ## Error handling
 
@@ -257,6 +305,18 @@ What we explicitly don't test: LLM output content correctness inside nodes (that
 
 ## Migration
 
-No data migration. New code paths only. The existing `expansion` mode flag on planner and synthesizer becomes dead code once depth pipeline ships — remove in the same PR. Existing research_documents in Supabase remain valid against the unchanged `ResearchDocumentSchema`.
+No data migration. Existing research_documents in Supabase remain valid against the unchanged `ResearchDocumentSchema`.
 
-Rollout: feature flag gates the new pipelines per environment. Dev gets it first, then staging with golden-doc set verification, then production. The flag falls back to today's pipeline if either subgraph throws at the entry point. Once we're confident in production (one week of clean runs), remove the flag and the old code.
+**New dependency**: `posthog-node` in the pipeline package. Today's pipeline has no telemetry destination beyond Langfuse traces; the mobile app uses `posthog-react-native` separately. Adding the SDK and bootstrapping a client at pipeline startup is part of this work.
+
+**Code removals** (all in the same PR that ships the new pipelines):
+
+- `pipeline/src/podcast_pipeline/nodes/qualityGate.ts` — entire file. `status: "scripting"` transition that lived here now happens at the end of each new synthesizer (breadth) or merge node (depth).
+- `briefBuilder` keeps its `isExpansion` branch (still the right place to swap the brief prompt); the `expansion` mode flags on the *research nodes* are what go away
+- `pipeline/src/podcast_pipeline/nodes/research/planner.ts` — current expansion-mode prompt injection
+- `pipeline/src/podcast_pipeline/nodes/research/synthesizer.ts` — current full-parent-doc injection
+- `graph.ts` — `qualityGate` node and its edges, `routeAfterQualityGate`, `routeAfterDeepResearch`. Replaced by `routeAfterBriefBuilder` (breadth vs depth) and direct edges from each synthesizer to `scriptWriter`. The failed-status short-circuit that `routeAfterDeepResearch` did moves into a final-check helper at the end of each synthesizer (no research material → status="failed", same `handlePipelineFailure` invocation as today via `runPipeline`).
+- `state.ts` — `credibilityScore`, `credibilityReport`, `researchIterations`, `shouldRetry`, `needsDisclaimer`
+- `config.ts` — `CREDIBILITY_THRESHOLD`, `MAX_RESEARCH_RETRIES`
+
+Rollout: feature flag (`RESEARCH_V12_ASYMMETRIC`) gates the new pipelines per environment. Dev gets it first, then staging with golden-doc set verification, then production. The flag falls back to today's pipeline if either subgraph throws at the entry point. Once we're confident in production (one week of clean runs), remove the flag and the old code in a follow-up PR.
