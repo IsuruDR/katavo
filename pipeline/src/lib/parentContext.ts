@@ -68,3 +68,101 @@ export function buildResearchDigest(researchDocument: Record<string, unknown>): 
     })
     .join("\n");
 }
+
+// v22 — chapter section finder + covered-ground digest for the depth pipeline
+import { COVERED_GROUND_DIGEST_MAX_CHARS } from "../podcast_pipeline/config.js";
+
+export interface ParentSection {
+  title: string;
+  content: string;
+}
+
+export interface SectionMatch {
+  section: ParentSection | null;
+  matchedIndex: number;
+  matchKind: "substring" | "overlap" | "fallback" | "none";
+}
+
+const TOKEN_SPLIT = /[\s\-_,.;:!?()\[\]"']+/;
+const STOPWORDS = new Set([
+  "the", "a", "an", "of", "in", "on", "for", "to", "and", "or", "but",
+  "is", "are", "was", "were", "be", "with", "by", "as", "at", "it",
+]);
+
+function tokenize(s: string): string[] {
+  return s
+    .toLowerCase()
+    .split(TOKEN_SPLIT)
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
+}
+
+export function findRelevantSection(
+  chapterTitle: string,
+  sections: ParentSection[],
+): SectionMatch {
+  if (sections.length === 0) {
+    return { section: null, matchedIndex: -1, matchKind: "none" };
+  }
+  const lowerChapter = chapterTitle.toLowerCase();
+
+  // 1. Case-insensitive substring match (either direction)
+  for (let i = 0; i < sections.length; i++) {
+    const lowerTitle = sections[i].title.toLowerCase();
+    if (lowerChapter.includes(lowerTitle) || lowerTitle.includes(lowerChapter)) {
+      return { section: sections[i], matchedIndex: i, matchKind: "substring" };
+    }
+  }
+
+  // 2. Keyword overlap, threshold 0.3
+  const chapterTokens = new Set(tokenize(chapterTitle));
+  if (chapterTokens.size === 0) {
+    return { section: sections[0], matchedIndex: 0, matchKind: "fallback" };
+  }
+  let bestScore = 0;
+  let bestIndex = -1;
+  for (let i = 0; i < sections.length; i++) {
+    const sectionTokens = new Set(tokenize(sections[i].title));
+    if (sectionTokens.size === 0) continue;
+    let overlap = 0;
+    for (const t of chapterTokens) if (sectionTokens.has(t)) overlap++;
+    const score = overlap / Math.max(chapterTokens.size, sectionTokens.size);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  if (bestScore >= 0.3 && bestIndex >= 0) {
+    return { section: sections[bestIndex], matchedIndex: bestIndex, matchKind: "overlap" };
+  }
+
+  // 3. Fallback to first section
+  return { section: sections[0], matchedIndex: 0, matchKind: "fallback" };
+}
+
+export function buildCoveredGroundDigest(
+  researchDocument: Record<string, unknown>,
+  excludeSectionIndex: number,
+): string {
+  const sections = (researchDocument as { sections?: ParentSection[] }).sections;
+  if (!Array.isArray(sections) || sections.length === 0) {
+    return "(no parent research available)";
+  }
+  const other = sections
+    .map((s, i) => ({ ...s, index: i }))
+    .filter((s) => s.index !== excludeSectionIndex);
+  if (other.length === 0) {
+    return "(no other parent sections covered)";
+  }
+  const bullets = other.map((s) => {
+    const firstSentence = (s.content ?? "")
+      .split(/(?<=[.!?])\s/)[0]
+      .slice(0, 240);
+    return `- ${s.title}: ${firstSentence}`;
+  });
+  let out = bullets.join("\n");
+  while (out.length > COVERED_GROUND_DIGEST_MAX_CHARS && bullets.length > 1) {
+    bullets.pop();
+    out = bullets.join("\n");
+  }
+  return out;
+}

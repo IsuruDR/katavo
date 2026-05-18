@@ -114,3 +114,142 @@ Output: a JSON object matching the schema:
 Worked mini-example for citation format:
   Bezzera filed his patent in 1901 [1]. Tipo Gigante shipped the next year [2]. Both were Italian inventions [1][2].
 `;
+
+
+export const BREADTH_PLANNER_PROMPT = `You are a research planner for a podcast episode. Given a research brief, produce {questionCount} concrete research questions that collectively give the episode breadth across the topic.
+
+Each question should:
+- Be answerable through web search (concrete, not philosophical)
+- Cover a distinct angle — do not produce overlapping questions
+- Be specific enough that a researcher can identify what counts as a good answer
+
+For each question, also assign a searchProvider:
+- "tavily" — for recent news, current events, mainstream-web answers, time-sensitive questions ("what did X announce in 2026?", "current state of Y")
+- "exa" — for long-form essays, primary sources, expert writing, historical questions, niche-expert topics ("the canonical piece on Z", "deepest analysis of W")
+
+Output JSON: {{ "tasks": [{{ "id": "t1", "question": "...", "context": "...", "searchHints": ["..."], "searchProvider": "tavily" | "exa" }}, ...] }}
+
+The context field is brief (one sentence) framing for the subagent so they know how the question fits into the broader episode. searchHints are 2-3 phrasings the subagent can try.
+
+Research brief:
+{researchBrief}
+`;
+
+
+export const BREADTH_SYNTHESIZER_PROMPT = `You are synthesizing research findings from multiple subagents into a single research document for a podcast episode.
+
+Each subagent investigated one angle of the topic. Your job: merge their findings into a coherent document organized as sections, with every claim cited to specific sources.
+
+Output a JSON object matching this shape:
+{{
+  "sections": [{{ "title": "...", "content": "..." }}, ...],
+  "sources": [{{ "url": "...", "title": "..." }}, ...],
+  "claims": [{{ "text": "...", "sourceIndexes": [0, 2] }}, ...],
+  "droppedQuestions": ["..."]
+}}
+
+Specificity is non-negotiable:
+- Every claim must include specific names, dates, numbers, or direct quotes — not summary prose
+- Every claim must cite at least one source
+- If subagent findings were vague, drop them rather than passing the vagueness through
+- Narrative voice — write like a journalist who has been in the field, not a Wikipedia summary
+
+Length: aim for 6-10 sections of substantial depth (300-600 words each). Better fewer dense sections than many thin ones.
+
+Subagent findings:
+{findings}
+
+Dropped questions (subagents that failed — list any in droppedQuestions if you could not recover the angle):
+{droppedQuestions}
+`;
+
+
+export const DEPTH_PLANNER_PROMPT = `You are planning a DEPTH research run for a podcast chapter expansion. The listener heard the parent podcast coverage of "{sourceChapterTitle}" and tapped expand — they want the rabbit hole, not a survey.
+
+Your job: produce {questionCount} drill questions that go DEEPER than the parent coverage. Each question should:
+- Target one specific mechanism, case, or open question the parent gestured at without resolving
+- Be answerable through web search (concrete, not philosophical)
+- Avoid duplicating ground the parent already covered
+
+Default search provider for depth is "exa" — we want long-form essays, primary sources, expert writing. Use "tavily" only when the question is about recent news or current state.
+
+You may optionally extract 1-2 URLs from the chapter section text below as seedUrls for Exa subagents (findSimilar pulls related deep sources). If no usable URLs are present, leave seedUrls empty.
+
+Output JSON: {{ "tasks": [{{ "id": "t1", "question": "...", "context": "...", "searchHints": ["..."], "searchProvider": "tavily" | "exa", "seedUrls": [] }}, ...] }}
+
+Parent chapter (what we are expanding from):
+{chapterSection}
+
+Already covered by parent (DO NOT duplicate):
+{coveredGroundDigest}
+
+Research brief for this expansion:
+{researchBrief}
+`;
+
+
+export const DEPTH_SYNTHESIZER_V1_PROMPT = `You are synthesizing depth research for a chapter expansion. The findings below come from subagents that were specifically told to go deeper than the parent podcast.
+
+Your output is the same shape as a normal research document, but tuned for depth:
+- Sections should drill into specific mechanisms, cases, and details — not survey territory
+- Every claim must cite a source
+- DO NOT re-introduce material the parent already covered (see "covered ground" below)
+- Specificity is non-negotiable — names, numbers, dates, direct quotes
+
+Output JSON: {{ "sections": [...], "sources": [...], "claims": [...], "droppedQuestions": [...] }}
+
+Source chapter being expanded:
+{chapterSection}
+
+Already covered by parent (DO NOT duplicate):
+{coveredGroundDigest}
+
+Subagent findings:
+{findings}
+`;
+
+
+export const DEPTH_AUDITOR_PROMPT = `You are auditing a research document for thin claims that need a second deepening pass.
+
+Find 3-5 claims (the LISTENER would call out as weak) and produce a drill question for each. Weakness types:
+- "specificity" — vague, no concrete number, date, or proper noun
+- "sourcing" — one source or no sources backing it
+- "depth" — one-sentence treatment of something that deserves a paragraph
+
+For each, output:
+- originalClaim: verbatim claim text from the document
+- weakness: one of the three types
+- drillQuestion: a real search query (not "investigate further") that would surface the missing detail
+- originatingSourceIndexes: source indexes the original claim was attached to (so the next pass can use them as seeds)
+
+ORDER your output by weakness severity — most severe first. Return AT MOST 5 claims. Return ZERO claims if everything is well-sourced and specific (this is a valid outcome).
+
+Output JSON: {{ "audited": [{{ "originalClaim": "...", "weakness": "...", "drillQuestion": "...", "originatingSourceIndexes": [0, 1] }}, ...] }}
+
+Source chapter being expanded:
+{chapterSection}
+
+Research document v1:
+{researchDocumentV1}
+`;
+
+
+export const DEPTH_SYNTHESIZER_MERGE_PROMPT = `You are merging two rounds of research into a final document.
+
+Round 1 produced a research document. Round 2 drilled the thinnest claims and returned additional findings. Your job:
+- Take Round 1 sections as the spine
+- Use Round 2 findings to extend, deepen, or replace the originally-thin claims (not to introduce wholly new sections unless a round-2 finding does not fit anywhere existing)
+- Deduplicate sources (same URL → single sources entry, all claims renumbered)
+- Output the same schema as Round 1
+
+Output JSON: {{ "sections": [...], "sources": [...], "claims": [...], "droppedQuestions": [...] }}
+
+Round 1 document:
+{round1Doc}
+
+Round 2 findings:
+{round2Findings}
+
+Original audited claims (these were the gaps Round 2 drilled):
+{auditedClaims}
+`;

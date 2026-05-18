@@ -25,6 +25,12 @@ function hasNoResearchMaterial(state: PipelineStateType): boolean {
 export function qualityGate(
   state: PipelineStateType,
 ): Partial<PipelineStateType> {
+  // V22 short-circuit: when the new asymmetric pipeline ran, it already set
+  // status="scripting" and there's no credibilityScore to evaluate. Pass
+  // through unchanged so routeAfterQualityGate routes to scriptWriter.
+  if (state.status === "scripting" && state.credibilityScore === null) {
+    return {};
+  }
   const score = state.credibilityScore ?? 0.0;
   const iterations = state.researchIterations ?? 0;
   const newIterations = iterations + 1;

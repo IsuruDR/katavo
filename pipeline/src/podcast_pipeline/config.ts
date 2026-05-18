@@ -31,7 +31,63 @@ export const RESEARCH_BUDGETS: Record<string, { maxSearches: number; maxReflecti
   pro: { maxSearches: 5, maxReflections: 2 },
 };
 
+// v22 — unified tier config. Replaces RESEARCH_BUDGETS as the single source of
+// truth for tier-scaled budgets across the asymmetric pipeline. Free tier gets
+// every feature, just tighter budgets.
+export type TierName = "free" | "plus" | "pro";
+
+export interface TierBudget {
+  breadthQuestions: number;
+  searchBudget: { maxSearches: number; maxReflections: number };
+  gateFireThreshold: number; // Min audit findings before R2 fires
+  maxR2Subagents: number;    // Static cap on R2 dispatch
+}
+
+export const TIER_CONFIG: Record<TierName, TierBudget> = {
+  free: {
+    breadthQuestions: 5,
+    searchBudget: { maxSearches: 2, maxReflections: 1 },
+    gateFireThreshold: 3,
+    maxR2Subagents: 3,
+  },
+  plus: {
+    breadthQuestions: 6,
+    searchBudget: { maxSearches: 3, maxReflections: 2 },
+    gateFireThreshold: 2,
+    maxR2Subagents: 4,
+  },
+  pro: {
+    breadthQuestions: 8,
+    searchBudget: { maxSearches: 5, maxReflections: 2 },
+    gateFireThreshold: 1,
+    maxR2Subagents: 5,
+  },
+};
+
+export function resolveTier(rawTier: string | undefined): TierName {
+  return (rawTier === "plus" || rawTier === "pro") ? rawTier : "free";
+}
+
 export const SUBAGENT_WALLCLOCK_MS = 90_000;
+
+// v22 — web_fetch & depth-pipeline constants
+/** Top-N cited URLs to fetch per subagent. */
+export const WEB_FETCH_TOP_N = 3;
+/** Per-URL character budget for fetched article extracts (~4K tokens). */
+export const WEB_FETCH_MAX_CHARS_PER_URL = 16_000;
+/** Per-URL fetch timeout (ms). */
+export const WEB_FETCH_TIMEOUT_MS = 10_000;
+/** Threshold below which a 200-status page is treated as paywall/login-wall. */
+export const WEB_FETCH_MIN_EXTRACT_CHARS = 200;
+/** Covered-ground digest cap in characters (~800 tokens). */
+export const COVERED_GROUND_DIGEST_MAX_CHARS = 3_200;
+/** Wall-clock cap for round-2 deepening across all subagents in parallel. */
+export const ROUND2_WALLCLOCK_MS = 90_000;
+
+/** Returns true when the v22 asymmetric pipeline should run. */
+export function isAsymmetricResearchEnabled(): boolean {
+  return process.env.RESEARCH_V12_ASYMMETRIC === "1";
+}
 // Note: pipeline-level wallclock is not enforced as a constant. Per-subagent
 // (90s) is the only wallclock; with N <= 5 + sequential planner/synthesizer,
 // total bound is naturally ~3 min. If we want a hard pipeline cap later,

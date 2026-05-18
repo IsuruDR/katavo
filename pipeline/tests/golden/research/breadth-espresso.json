@@ -1,0 +1,13 @@
+{
+  "id": "breadth-espresso",
+  "input": {
+    "topic": "the history of espresso machines",
+    "tier": "pro",
+    "clarifyingAnswers": []
+  },
+  "expected": {
+    "minSectionCount": 6,
+    "minSourceCount": 8,
+    "minFetchedRatio": 0.5
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "depth-espresso-lever",
+  "input": {
+    "topic": "the history of espresso machines",
+    "tier": "pro",
+    "clarifyingAnswers": [],
+    "parentPodcastId": "golden-parent-espresso",
+    "sourceChapterTitle": "The lever mechanism",
+    "parentResearchDocument": {
+      "sections": [
+        {
+          "title": "Origins",
+          "content": "Bezzera filed his first patent in 1901. Steam pressure dominated until the postwar era."
+        },
+        {
+          "title": "The lever mechanism",
+          "content": "Achille Gaggia introduced the spring-loaded lever in 1947, producing the first true crema."
+        },
+        {
+          "title": "Modern era",
+          "content": "Electric pumps replaced levers in the 1960s; PID temperature control followed in the 90s."
+        }
+      ]
+    }
+  },
+  "expected": {
+    "minSectionCount": 4,
+    "minSourceCount": 5,
+    "minFetchedRatio": 0.5
+  }
+}
