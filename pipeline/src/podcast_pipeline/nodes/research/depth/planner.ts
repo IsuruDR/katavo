@@ -20,7 +20,7 @@ const PlannerOutputSchema = z.object({
       context: z.string(),
       searchHints: z.array(z.string()),
       searchProvider: SearchProviderSchema,
-      seedUrls: z.array(z.string()).default([]),
+      seedUrls: z.array(z.string()).optional(),
     }),
   ),
 });
@@ -69,7 +69,7 @@ export async function runDepthPlanner(
 
   return result.tasks.map((t) => ({
     ...t,
-    seedUrls: t.seedUrls.length > 0 ? t.seedUrls : undefined,
+    seedUrls: t.seedUrls && t.seedUrls.length > 0 ? t.seedUrls : undefined,
     maxSearches: tierCfg.searchBudget.maxSearches,
     maxReflections: tierCfg.searchBudget.maxReflections,
     fetchCitedUrls: true,
