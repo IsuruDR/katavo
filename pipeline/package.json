@@ -15,7 +15,9 @@
     "make-pro": "tsx scripts/make-pro-user.ts",
     "build-voice-samples": "tsx scripts/build-voice-samples.ts",
     "test-voices": "tsx scripts/test-voices.ts",
-    "tts-eval": "tsx scripts/tts-eval.ts"
+    "tts-eval": "tsx scripts/tts-eval.ts",
+    "smoke:research": "tsx scripts/smoke-research.ts",
+    "golden:research": "tsx scripts/run-golden-research.ts"
   },
   "dependencies": {
     "@expo-google-fonts/ibm-plex-sans": "^0.4.1",
