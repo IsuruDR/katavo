@@ -162,3 +162,27 @@ Subagent findings:
 Dropped questions (subagents that failed — list any in droppedQuestions if you could not recover the angle):
 {droppedQuestions}
 `;
+
+
+export const DEPTH_PLANNER_PROMPT = `You are planning a DEPTH research run for a podcast chapter expansion. The listener heard the parent podcast coverage of "{sourceChapterTitle}" and tapped expand — they want the rabbit hole, not a survey.
+
+Your job: produce {questionCount} drill questions that go DEEPER than the parent coverage. Each question should:
+- Target one specific mechanism, case, or open question the parent gestured at without resolving
+- Be answerable through web search (concrete, not philosophical)
+- Avoid duplicating ground the parent already covered
+
+Default search provider for depth is "exa" — we want long-form essays, primary sources, expert writing. Use "tavily" only when the question is about recent news or current state.
+
+You may optionally extract 1-2 URLs from the chapter section text below as seedUrls for Exa subagents (findSimilar pulls related deep sources). If no usable URLs are present, leave seedUrls empty.
+
+Output JSON: {{ "tasks": [{{ "id": "t1", "question": "...", "context": "...", "searchHints": ["..."], "searchProvider": "tavily" | "exa", "seedUrls": [] }}, ...] }}
+
+Parent chapter (what we are expanding from):
+{chapterSection}
+
+Already covered by parent (DO NOT duplicate):
+{coveredGroundDigest}
+
+Research brief for this expansion:
+{researchBrief}
+`;
